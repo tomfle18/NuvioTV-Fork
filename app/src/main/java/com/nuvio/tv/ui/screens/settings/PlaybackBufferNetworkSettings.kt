@@ -107,6 +107,7 @@ internal fun PlaybackBufferNetworkSection(
         SettingsNote(text = stringResource(R.string.playback_net_auto_speedup_custom_note))
     }
     ParallelNetworkControls(settings = settings, updateMemory = updateMemory)
+    com.nuvio.tv.mod.streamrules.StreamNetworkRulesSection(settings)
 }
 
 @androidx.annotation.OptIn(UnstableApi::class)

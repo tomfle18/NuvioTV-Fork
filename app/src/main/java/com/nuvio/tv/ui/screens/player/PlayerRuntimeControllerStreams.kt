@@ -1830,7 +1830,7 @@ internal fun PlayerRuntimeController.switchToEpisodeStream(
     // keyed on the wrong geometry, the player declines to adopt it and the
     // path falls back to a normal open.
     lastAppliedPlayerSettings?.let { cachedSettings ->
-        applyMediaSourceFactorySettings(cachedSettings)
+        applyMediaSourceFactorySettings(com.nuvio.tv.mod.streamrules.StreamNetworkRulesStore.resolveCached(url, cachedSettings))
         runCatching {
             mediaSourceFactory.prestartChunk0(
                 url = url,

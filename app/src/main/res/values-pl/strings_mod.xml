@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mod_stream_rules_label">Reguły dla adresów streamów</string>
+    <string name="mod_stream_rules_note">Stream, którego adres z listy dodatku zaczyna się od tekstu reguły, używa jej ustawień sieci zamiast tych powyżej. Gdy pasuje kilka reguł, wygrywa pierwsza.</string>
+    <string name="mod_stream_rules_add">Dodaj regułę</string>
+    <string name="mod_stream_rules_edit_title">Reguła dla adresu streamu</string>
+    <string name="mod_stream_rules_position">Reguła %1$d z %2$d</string>
+    <string name="mod_stream_rules_prefix_hint">Początek adresu, np. https://host.example/</string>
+    <string name="mod_stream_rules_summary_speedup_on">Połączenia: %1$s · przyspieszenie wł.</string>
+    <string name="mod_stream_rules_summary_speedup_off">Połączenia: %1$s · przyspieszenie wył.</string>
+    <string name="mod_stream_rules_move_up">Wyżej</string>
+    <string name="mod_stream_rules_move_down">Niżej</string>
+</resources>

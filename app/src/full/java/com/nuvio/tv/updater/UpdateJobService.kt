@@ -80,6 +80,7 @@ class UpdateJobService : JobService() {
     }
 
     private suspend fun checkAndDownload(entryPoint: UpdateJobEntryPoint) {
+        if (!BuildConfig.UPDATE_CHECK_ENABLED) return
         val preferences = entryPoint.updatePreferences()
         val autoInstallEnabled = preferences.autoInstallEnabled.first()
         if (!preferences.updateBannerEnabled.first() && !autoInstallEnabled) return

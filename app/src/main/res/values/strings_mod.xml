@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fork-only texts, kept apart from strings.xml so upstream merges do not conflict. -->
+<resources>
+    <string name="mod_stream_rules_label">Rules for stream addresses</string>
+    <string name="mod_stream_rules_note">A stream whose address, as the addon lists it, starts with a rule\'s text uses that rule\'s network settings instead of the ones above. When several rules match, the first one wins.</string>
+    <string name="mod_stream_rules_add">Add rule</string>
+    <string name="mod_stream_rules_edit_title">Stream address rule</string>
+    <string name="mod_stream_rules_position">Rule %1$d of %2$d</string>
+    <string name="mod_stream_rules_prefix_hint">Start of the address, e.g. https://host.example/</string>
+    <string name="mod_stream_rules_summary_speedup_on">Connections: %1$s · speed-up on</string>
+    <string name="mod_stream_rules_summary_speedup_off">Connections: %1$s · speed-up off</string>
+    <string name="mod_stream_rules_move_up">Move up</string>
+    <string name="mod_stream_rules_move_down">Move down</string>
+</resources>

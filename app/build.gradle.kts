@@ -197,7 +197,8 @@ android {
         buildConfigField("String", "GITHUB_OWNER", "\"ysosrs123\"")
         buildConfigField("String", "GITHUB_REPO", "\"NuvioTV-Fork\"")
         buildConfigField("String", "GITHUB_REPO_NEW_NAME", "\"Nuvio-Arc\"")
-        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "true")
+        // Fork mod: -PnuvioUpdatesEnabled=false (set in gradle.properties) turns update checks off and hides them.
+        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", (providers.gradleProperty("nuvioUpdatesEnabled").orNull != "false").toString())
     }
 
     flavorDimensions += "distribution"

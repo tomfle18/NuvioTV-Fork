@@ -477,7 +477,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                 PlayerTunnelAvSyncPolicy.deadAudioClasses.removeAll(expiredTunnelStalls)
                 Log.i(PlayerRuntimeController.TAG, "TUNNEL_AV_SYNC: saved dead-clock memo expired for $expiredTunnelStalls")
             }
-            val playerSettings = playerSettingsDataStore.playerSettings.first()
+            val playerSettings = com.nuvio.tv.mod.streamrules.StreamNetworkRulesStore.resolve(context, url, playerSettingsDataStore.playerSettings.first())
             if (initializationGeneration != playbackRecoveryGate.generation) return@launch
             currentPlayerSettingsForReport = playerSettings
             com.nuvio.tv.core.report.PlaybackRecorder.begin(context, playerSettings.reportRecorderEnabled)
