@@ -36,6 +36,8 @@ object DisplayRefreshMeter {
     private const val MIN_TICKS = 40
     /** 24.000 against 23.976 is 0.1 %; a four second reading is good to a few thousandths of a percent. */
     private const val DIFFERS_FRACTION = 0.0004f
+    /** After a real mode change a count further than this from Android's rate is a bad count, not the screen. */
+    private const val PLAUSIBLE_FRACTION = 0.01f
 
     @Volatile var latest: Reading? = null
         private set
@@ -61,8 +63,11 @@ object DisplayRefreshMeter {
                         return
                     }
                     val hz = hzFrom(ticks) ?: return
-                    if (ticksStayedAt(fromHz, hz, androidHz, seamless)) ticksIgnoreModeChanges = true
-                    val reading = Reading(hz, androidHz, seamless, ticks.size, reliable(seamless, ticksIgnoreModeChanges))
+                    if (ticksMissedModeChange(hz, androidHz, seamless)) ticksIgnoreModeChanges = true
+                    val reading = Reading(
+                        hz, androidHz, seamless, ticks.size,
+                        reliable(seamless, ticksIgnoreModeChanges) && plausible(hz, androidHz)
+                    )
                     latest = reading
                     readings.tryEmit(reading)
                     Log.i(TAG, "DISPLAY_REFRESH ${describe(reading)} ticks=${ticks.size}")
@@ -95,14 +100,29 @@ object DisplayRefreshMeter {
         return (periods * 1_000_000_000.0 / span).toFloat()
     }
 
-    fun differs(reading: Reading): Boolean = reading.reliable && off(reading.measuredHz, reading.androidHz)
+    /** Only a count that sits on another rate screens really run at says the screen is at the wrong rate. */
+    fun differs(reading: Reading): Boolean =
+        reading.reliable && onAnotherRealRate(reading.measuredHz, reading.androidHz)
 
     private fun off(measuredHz: Float, androidHz: Float): Boolean =
         androidHz > 0f && abs(measuredHz - androidHz) / androidHz > DIFFERS_FRACTION
 
-    /** A mode change that left the count at the rate it came from, not at the one Android switched to. */
-    internal fun ticksStayedAt(fromHz: Float?, measuredHz: Float, androidHz: Float, seamless: Boolean?): Boolean =
-        seamless == false && fromHz != null && off(measuredHz, androidHz) && !off(measuredHz, fromHz)
+    internal fun onAnotherRealRate(measuredHz: Float, androidHz: Float): Boolean =
+        off(measuredHz, androidHz) && REAL_RATES.any { !off(measuredHz, it) && off(it, androidHz) }
+
+    /** A count that is neither the rate Android reports nor another real rate is a bad count and says nothing. */
+    internal fun plausible(measuredHz: Float, androidHz: Float): Boolean =
+        !off(measuredHz, androidHz) || onAnotherRealRate(measuredHz, androidHz)
+
+    private val REAL_RATES: List<Float> = listOf(24f, 25f, 30f, 48f, 50f, 60f, 100f, 120f)
+        .flatMap { listOf(it, it * 1000f / 1001f) }
+
+    /**
+     * A mode change after which the count is nowhere near the rate Android switched to: left at the old rate, or
+     * somewhere in between. A screen that really runs at 24.000 for 23.976 is 0.1 % off and is still judged.
+     */
+    internal fun ticksMissedModeChange(measuredHz: Float, androidHz: Float, seamless: Boolean?): Boolean =
+        seamless == false && androidHz > 0f && abs(measuredHz - androidHz) / androidHz > PLAUSIBLE_FRACTION
 
     /** Without a mode change (QMS or VRR) the count is the only evidence there is, so it always stands. */
     internal fun reliable(seamless: Boolean?, ticksIgnoreModeChanges: Boolean): Boolean =
@@ -115,10 +135,26 @@ object DisplayRefreshMeter {
             false -> append(", switched with a mode change")
             null -> {}
         }
-        if (!reading.reliable) append(", count does not follow mode changes on this box")
+        if (!reading.reliable) {
+            append(
+                if (plausible(reading.measuredHz, reading.androidHz)) ", count does not follow mode changes on this box"
+                else ", count is not a rate a screen runs at"
+            )
+        }
     }
 
     internal fun format(hz: Float): String = String.format(Locale.US, "%.3f", hz)
+
+    /**
+     * Seconds between two repeated (or dropped) frames when the screen runs at [measuredHz] for a film asked at
+     * [androidHz]: 24.000 against 23.976 gives 42. Null when they are so far apart that it is a steady judder.
+     */
+    internal fun repeatEverySeconds(measuredHz: Float, androidHz: Float): Int? {
+        val diff = abs(measuredHz - androidHz)
+        if (diff <= 0f) return null
+        val seconds = 1f / diff
+        return if (seconds >= 5f) seconds.roundToInt() else null
+    }
 }
 
 @Singleton

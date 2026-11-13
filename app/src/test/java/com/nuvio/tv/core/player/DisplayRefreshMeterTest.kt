@@ -40,12 +40,41 @@ class DisplayRefreshMeterTest {
     }
 
     @Test
-    fun `a count left at the old rate after a mode change is not taken as the screen's rate`() {
-        assertTrue(DisplayRefreshMeter.ticksStayedAt(fromHz = 59.94f, measuredHz = 59.939f, androidHz = 23.976f, seamless = false))
-        assertFalse(DisplayRefreshMeter.ticksStayedAt(fromHz = 59.94f, measuredHz = 24.000f, androidHz = 23.976f, seamless = false))
-        assertFalse(DisplayRefreshMeter.ticksStayedAt(fromHz = 59.94f, measuredHz = 23.976f, androidHz = 23.976f, seamless = false))
-        assertFalse(DisplayRefreshMeter.ticksStayedAt(fromHz = 59.94f, measuredHz = 59.939f, androidHz = 23.976f, seamless = true))
-        assertFalse(DisplayRefreshMeter.ticksStayedAt(fromHz = null, measuredHz = 59.939f, androidHz = 23.976f, seamless = false))
+    fun `a count nowhere near the new rate after a mode change is not taken as the screen's rate`() {
+        assertTrue(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 59.939f, androidHz = 23.976f, seamless = false))
+        assertTrue(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 37.555f, androidHz = 23.976f, seamless = false))
+        assertFalse(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 24.000f, androidHz = 23.976f, seamless = false))
+        assertFalse(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 23.976f, androidHz = 23.976f, seamless = false))
+        assertFalse(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 37.555f, androidHz = 23.976f, seamless = true))
+        assertFalse(DisplayRefreshMeter.ticksMissedModeChange(measuredHz = 59.939f, androidHz = 23.976f, seamless = null))
+    }
+
+    @Test
+    fun `only a count on another real rate is flagged`() {
+        fun reading(hz: Float, android: Float, seamless: Boolean?) = DisplayRefreshMeter.Reading(
+            hz, android, seamless, ticks = 96, reliable = DisplayRefreshMeter.plausible(hz, android)
+        )
+        assertTrue(DisplayRefreshMeter.differs(reading(24.000f, 23.976f, seamless = false)))
+        assertTrue(DisplayRefreshMeter.differs(reading(24.004f, 23.976f, seamless = true)))
+        assertTrue(DisplayRefreshMeter.differs(reading(59.939f, 23.976f, seamless = true)))
+        assertTrue(DisplayRefreshMeter.differs(reading(60.000f, 59.94f, seamless = true)))
+        assertTrue(DisplayRefreshMeter.differs(reading(50.000f, 23.976f, seamless = null)))
+
+        val amlogicQms = reading(24.088f, 23.976f, seamless = true)
+        assertFalse(amlogicQms.reliable)
+        assertFalse(DisplayRefreshMeter.differs(amlogicQms))
+        assertEquals(
+            "measured 24.088 Hz, Android says 23.976 Hz, switched without a mode change (QMS or VRR), count is not a rate a screen runs at",
+            DisplayRefreshMeter.describe(amlogicQms)
+        )
+        assertFalse(DisplayRefreshMeter.differs(reading(37.555f, 23.976f, seamless = false)))
+        assertFalse(reading(37.555f, 23.976f, seamless = true).reliable)
+
+        val homatics = reading(23.970f, 23.976f, seamless = false)
+        assertTrue(homatics.reliable)
+        assertFalse(DisplayRefreshMeter.differs(homatics))
+        assertFalse(DisplayRefreshMeter.differs(reading(59.939f, 59.94f, seamless = false)))
+        assertFalse(DisplayRefreshMeter.differs(reading(23.976f, 23.976f, seamless = true)))
     }
 
     @Test
