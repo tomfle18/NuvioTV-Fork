@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.R
 import com.nuvio.tv.updater.model.AppUpdate
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -61,25 +62,31 @@ class UpdateViewModel @Inject constructor(
     private var updateCheckJob: Job? = null
 
     init {
-        viewModelScope.launch {
-            val enabled = updatePreferences.updateBannerEnabled.first()
-            try { updatePreferences.initializeForkStream() } catch (_: java.io.IOException) { /* Retry next launch. */ }
-            val autoInstallEnabled = updatePreferences.autoInstallEnabled.first()
-            val autoInstallNoticeEnabled = updatePreferences.autoInstallNoticeEnabled.first()
-            val optimizeDuringInstall = updatePreferences.optimizeDuringInstall.first()
-            _uiState.update {
-                it.copy(
-                    updateBannerEnabled = enabled,
-                    autoInstallEnabled = autoInstallEnabled,
-                    autoInstallNoticeEnabled = autoInstallNoticeEnabled,
-                    optimizeDuringInstall = optimizeDuringInstall
-                )
-            }
-            downloadStore.clearIfInstalled()
-            consumeAutoInstalledUpdate()
-            syncBackgroundJobs()
-            if (enabled && !BuildConfig.IS_DEBUG_BUILD) {
-                checkForUpdates(force = false, showNoUpdateFeedback = false)
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) {
+            UpdateJobService.cancelAll(context)
+            _uiState.value = UpdateUiState(updateBannerEnabled = false, autoInstallEnabled = false,
+                autoInstallSupported = false, optimizeDuringInstallSupported = false)
+        } else {
+            viewModelScope.launch {
+                val enabled = updatePreferences.updateBannerEnabled.first()
+                try { updatePreferences.initializeForkStream() } catch (_: java.io.IOException) { /* Retry next launch. */ }
+                val autoInstallEnabled = updatePreferences.autoInstallEnabled.first()
+                val autoInstallNoticeEnabled = updatePreferences.autoInstallNoticeEnabled.first()
+                val optimizeDuringInstall = updatePreferences.optimizeDuringInstall.first()
+                _uiState.update {
+                    it.copy(
+                        updateBannerEnabled = enabled,
+                        autoInstallEnabled = autoInstallEnabled,
+                        autoInstallNoticeEnabled = autoInstallNoticeEnabled,
+                        optimizeDuringInstall = optimizeDuringInstall
+                    )
+                }
+                downloadStore.clearIfInstalled()
+                consumeAutoInstalledUpdate()
+                syncBackgroundJobs()
+                if (enabled && !BuildConfig.IS_DEBUG_BUILD) {
+                    checkForUpdates(force = false, showNoUpdateFeedback = false)
+                }
             }
         }
     }
@@ -213,6 +220,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun setUpdateBannerEnabled(enabled: Boolean) {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) return
         val changed = _uiState.value.updateBannerEnabled != enabled
         _uiState.update {
             it.copy(
@@ -231,6 +239,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun downloadUpdate() {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) return
         if (_uiState.value.isDownloading || _uiState.value.isChecking) return
         val update = _uiState.value.update ?: return
         _uiState.update { it.copy(isDownloading = true) }
@@ -286,6 +295,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun installUpdateOrRequestPermission() {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) return
         val apkPath = _uiState.value.downloadedApkPath ?: return
         val apkFile = File(apkPath)
         if (!apkFile.exists()) {
@@ -366,6 +376,7 @@ class UpdateViewModel @Inject constructor(
     }
 
     fun setAutoInstallEnabled(enabled: Boolean) {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) return
         _uiState.update { it.copy(autoInstallEnabled = enabled) }
         viewModelScope.launch {
             updatePreferences.setAutoInstallEnabled(enabled)
@@ -378,6 +389,7 @@ class UpdateViewModel @Inject constructor(
 
     // Background checks run while the banner or automatic installs are on; the idle install job only with the latter.
     private fun syncBackgroundJobs() {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) { UpdateJobService.cancelAll(context); return }
         if (BuildConfig.IS_DEBUG_BUILD) return
         val state = _uiState.value
         if (state.updateBannerEnabled || state.autoInstallEnabled) {

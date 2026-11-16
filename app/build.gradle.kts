@@ -99,6 +99,8 @@ val sponsorNames = resolveProperty(devProperties, localProperties, "SPONSOR_NAME
 
 // Native streaming is optional at build time and opt-in at runtime. Both shipping ARM ABIs use API 24.
 val withRustStreaming = providers.gradleProperty("withRustStreaming").orNull?.toBoolean() ?: true
+// This branch ships an isolated test app which must never install upstream releases.
+val enableInAppUpdates = false
 val rustJniDirectory = layout.buildDirectory.dir("generated/rustJni")
 val buildRustStreaming by tasks.registering(Exec::class) {
     group = "build"
@@ -160,7 +162,9 @@ android {
     ndkVersion = "29.0.14206865"
 
     defaultConfig {
-        applicationId = "com.nuvio.tv.test"
+        // Keep namespace/JNI classes unchanged; only the installed Android package is separate.
+        applicationId = "com.nuvio.tv.rusttest"
+        manifestPlaceholders["inAppUpdatesEnabled"] = enableInAppUpdates.toString()
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         minSdk = 24
         targetSdk = 36
@@ -230,7 +234,7 @@ android {
         buildConfigField("String", "GITHUB_OWNER", "\"ysosrs123\"")
         buildConfigField("String", "GITHUB_REPO", "\"NuvioTV-Fork\"")
         buildConfigField("String", "GITHUB_REPO_NEW_NAME", "\"Nuvio-Arc\"")
-        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", "true")
+        buildConfigField("boolean", "UPDATE_CHECK_ENABLED", enableInAppUpdates.toString())
     }
 
     flavorDimensions += "distribution"
@@ -238,7 +242,7 @@ android {
         create("full") {
             dimension = "distribution"
             buildConfigField("boolean", "FEATURE_PLUGINS_ENABLED", "true")
-            buildConfigField("boolean", "FEATURE_IN_APP_UPDATES_ENABLED", "true")
+            buildConfigField("boolean", "FEATURE_IN_APP_UPDATES_ENABLED", enableInAppUpdates.toString())
             buildConfigField("boolean", "FEATURE_IN_APP_TRAILERS_ENABLED", "true")
             buildConfigField("boolean", "FEATURE_EXTERNAL_TRAILERS_ENABLED", "true")
             buildConfigField("boolean", "FEATURE_EXTERNAL_PLAYBACK_KEEP_ALIVE_ENABLED", "true")

@@ -10,6 +10,7 @@ import android.os.Build
 import android.provider.Settings
 import androidx.core.content.FileProvider
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.build.AppFeaturePolicy
 import java.io.File
 
 object ApkInstaller {
@@ -86,6 +87,7 @@ object ApkInstaller {
         background: Boolean,
         withDexMetadata: Boolean = true
     ) {
+        check(AppFeaturePolicy.inAppUpdatesEnabled) { "In-app updates are disabled in this build" }
         val packageInstaller = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
@@ -142,6 +144,7 @@ object ApkInstaller {
      * offers to open it again.
      */
     fun launchSystemInstaller(context: Context, apkFile: File) {
+        check(AppFeaturePolicy.inAppUpdatesEnabled) { "In-app updates are disabled in this build" }
         UpdateRelaunchReceiver.cancelReopen(context)
         UpdateInstallLog.note(context, "Android installer screen")
         val authority = "${BuildConfig.APPLICATION_ID}.fileprovider"

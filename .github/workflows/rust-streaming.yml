@@ -50,7 +50,7 @@ jobs:
         run: >-
           ./gradlew :app:testFullDebugUnitTest
           --tests '*ParallelRange*' --tests '*AutoSpeedup*' --tests '*PlaybackPrewarm*'
-          --tests '*ConnectionLedger*' --tests '*HostSpeeds*' --tests '*streaming*'
+          --tests '*ConnectionLedger*' --tests '*HostSpeeds*' --tests '*streaming*' --tests '*updater*'
           -PrustHostJniDir=native/streaming-engine/target/debug
           :app:assembleFullDebug :app:assembleFullRelease --console=plain --max-workers=1
       - name: Verify both ARM splits and the Rust ELF alignment

@@ -1,21 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Lets the in-app updater install its own updates without a confirmation screen on Android 12+. -->
-    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- Test builds are updated manually from outside this app. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" tools:node="remove" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" tools:node="remove" />
 
     <application>
         <service
             android:name=".updater.UpdateJobService"
+            android:enabled="${inAppUpdatesEnabled}"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <receiver
             android:name=".updater.UpdateInstallResultReceiver"
+            android:enabled="${inAppUpdatesEnabled}"
             android:exported="false" />
 
         <receiver
             android:name=".updater.UpdateRelaunchReceiver"
+            android:enabled="${inAppUpdatesEnabled}"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />

@@ -9,6 +9,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import com.nuvio.tv.BuildConfig
+import com.nuvio.tv.core.build.AppFeaturePolicy
 import com.nuvio.tv.core.player.PlayerSessionTracker
 import com.nuvio.tv.core.util.hasPendingJob
 import com.nuvio.tv.core.util.scheduleSafely
@@ -54,6 +55,7 @@ class UpdateJobService : JobService() {
     private var jobScope: CoroutineScope? = null
 
     override fun onStartJob(params: JobParameters): Boolean {
+        if (!AppFeaturePolicy.inAppUpdatesEnabled) { cancelAll(this); return false }
         val entryPoint = EntryPointAccessors.fromApplication(applicationContext, UpdateJobEntryPoint::class.java)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         jobScope = scope
@@ -136,9 +138,10 @@ class UpdateJobService : JobService() {
     companion object {
         /** Silent self-updates need Android 12+ and the "install unknown apps" permission. */
         fun canInstallSilently(context: Context): Boolean =
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ApkInstaller.canRequestPackageInstalls(context)
+            AppFeaturePolicy.inAppUpdatesEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && ApkInstaller.canRequestPackageInstalls(context)
 
         fun schedulePeriodicCheck(context: Context) {
+            if (!AppFeaturePolicy.inAppUpdatesEnabled) { cancelAll(context); return }
             val scheduler = context.jobScheduler()
             if (scheduler.hasPendingJob(JOB_ID_CHECK)) return
             val job = JobInfo.Builder(JOB_ID_CHECK, ComponentName(context, UpdateJobService::class.java))
@@ -155,6 +158,7 @@ class UpdateJobService : JobService() {
          * few minutes later, so it does not compete with Home loading or a film starting right after launch.
          */
         fun scheduleCheckNow(context: Context) {
+            if (!AppFeaturePolicy.inAppUpdatesEnabled) { cancelAll(context); return }
             val scheduler = context.jobScheduler()
             if (scheduler.hasPendingJob(JOB_ID_CHECK_NOW)) return
             val job = JobInfo.Builder(JOB_ID_CHECK_NOW, ComponentName(context, UpdateJobService::class.java))
@@ -170,6 +174,7 @@ class UpdateJobService : JobService() {
         }
 
         fun scheduleIdleInstall(context: Context) {
+            if (!AppFeaturePolicy.inAppUpdatesEnabled) { cancelAll(context); return }
             if (!canInstallSilently(context)) return
             val job = JobInfo.Builder(JOB_ID_INSTALL, ComponentName(context, UpdateJobService::class.java))
                 .setRequiresDeviceIdle(true)
@@ -180,6 +185,13 @@ class UpdateJobService : JobService() {
 
         fun cancelIdleInstall(context: Context) {
             context.jobScheduler().cancel(JOB_ID_INSTALL)
+        }
+
+        fun cancelAll(context: Context) {
+            val scheduler = context.jobScheduler()
+            scheduler.cancel(JOB_ID_CHECK)
+            scheduler.cancel(JOB_ID_CHECK_NOW)
+            scheduler.cancel(JOB_ID_INSTALL)
         }
 
         private fun Context.jobScheduler(): JobScheduler =
