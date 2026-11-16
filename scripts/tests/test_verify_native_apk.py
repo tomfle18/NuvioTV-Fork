@@ -43,5 +43,23 @@ class NativeApkTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Missing native"):
                 module.verify(self.archive(root, abi="armeabi-v7a"), "arm64-v8a")
 
+    def test_rust_requires_load_segments_with_16k_alignment(self):
+        header = bytearray(120)
+        header[:6] = b"\x7fELF\x02\x01"
+        struct.pack_into("<Q", header, 32, 64)
+        struct.pack_into("<HH", header, 54, 56, 1)
+        struct.pack_into("<I", header, 64, 1)
+        struct.pack_into("<Q", header, 112, 16384)
+        module.rust_alignment(header)
+        struct.pack_into("<Q", header, 112, 4096)
+        with self.assertRaisesRegex(ValueError, "16 KiB"):
+            module.rust_alignment(header)
+        self.assertFalse(module.defined_symbols(b"ass_library_init ass_renderer_init ass_render_frame"))
+
+    def test_rust_build_cannot_silently_omit_the_library(self):
+        with tempfile.TemporaryDirectory() as root:
+            with self.assertRaisesRegex(ValueError, "libnuvio_streaming"):
+                module.verify(self.archive(root), "arm64-v8a", require_rust=True)
+
 if __name__ == "__main__":
     unittest.main()

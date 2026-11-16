@@ -185,6 +185,13 @@ jobs:
         if: inputs.mode != 'dry-run'
         uses: gradle/actions/setup-gradle@v6
 
+      - uses: dtolnay/rust-toolchain@1.91.1
+        if: inputs.mode != 'dry-run'
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - run: cargo install cargo-ndk --version 4.1.2 --locked
+        if: inputs.mode != 'dry-run'
+
       - name: Configure release properties
         if: inputs.mode != 'dry-run'
         run: |

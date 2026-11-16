@@ -29,6 +29,11 @@ jobs:
           java-version: "17"
           cache: gradle
 
+      - uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - run: cargo install cargo-ndk --version 4.1.2 --locked
+
       - name: Prepare local properties
         env:
           LOCAL_PROPERTIES_BASE64: ${{ secrets.LOCAL_PROPERTIES_BASE64 }}

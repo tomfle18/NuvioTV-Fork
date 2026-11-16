@@ -1,0 +1,75 @@
+name: Rust streaming contract and Android
+on:
+  push:
+    branches: [rust_port]
+  pull_request:
+    branches: [rust_port]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: rust-streaming-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  core-jni:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          components: rustfmt,clippy
+      - run: cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
+        working-directory: native/streaming-engine
+      - run: python3 scripts/rust_jni_contract.py
+      - run: python3 -m unittest discover -s scripts/tests -p test_verify_native_apk.py
+  android:
+    runs-on: ubuntu-latest
+    env:
+      CI_USE_DEBUG_SIGNING: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - run: cargo install cargo-ndk --version 4.1.2 --locked
+      - run: cargo build --manifest-path native/streaming-engine/Cargo.toml --locked
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;29.0.14206865' 'cmake;3.22.1'
+      - name: JVM regressions and both debug and R8 APKs, no release publication
+        run: >-
+          ./gradlew :app:testFullDebugUnitTest
+          --tests '*ParallelRange*' --tests '*AutoSpeedup*' --tests '*PlaybackPrewarm*'
+          --tests '*ConnectionLedger*' --tests '*HostSpeeds*' --tests '*streaming*'
+          -PrustHostJniDir=native/streaming-engine/target/debug
+          :app:assembleFullDebug :app:assembleFullRelease --console=plain --max-workers=1
+      - name: Verify both ARM splits and the Rust ELF alignment
+        shell: bash
+        run: |
+          for variant in debug release; do
+            for abi in arm64-v8a armeabi-v7a; do
+              python3 scripts/verify_native_apk.py "app/build/outputs/apk/full/$variant/app-full-$abi-$variant.apk" --abi "$abi" --require-rust
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-streaming-test-apks
+          path: app/build/outputs/apk/full/**/*.apk
+          retention-days: 7
+  miri-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly-2026-11-15
+        with:
+          components: miri,rust-src
+      - run: cargo +nightly-2026-11-15 miri test --no-default-features --lib
+        working-directory: native/streaming-engine

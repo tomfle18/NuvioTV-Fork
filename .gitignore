@@ -67,5 +67,11 @@ sentry.properties
 /.tools/
 /.gradle-local/
 /baseline-gradle.log
+/*.log
+/*-build.log
+/rust-test.log
+/jni-test.log
+/cargo-ndk-install.log
 **/target/
 !scripts/rust_range_server.py
+!scripts/rust_jni_contract.py
