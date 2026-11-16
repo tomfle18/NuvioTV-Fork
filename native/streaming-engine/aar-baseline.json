@@ -1,0 +1,62 @@
+[
+  {
+    "file": "lib-common-release.aar",
+    "sha256": "a01729509ff920e273ee696fc2cdf99ec073b9b5dc039c4d8dec72aa61bcb447",
+    "bytes": 541459
+  },
+  {
+    "file": "lib-datasource-okhttp-release.aar",
+    "sha256": "ba71ce4326b6bab3b06991ef1bbf50dd2205e5f65ae72fed1802858a99b10617",
+    "bytes": 10391
+  },
+  {
+    "file": "lib-datasource-release.aar",
+    "sha256": "44c07852a524e43bc978f8e816c9b2680a0e3a999bec09d8049509a3db898d0e",
+    "bytes": 177533
+  },
+  {
+    "file": "lib-decoder-av1-release.aar",
+    "sha256": "6d1d44eb871918a22e370c9625e29d4661fe818a28e26a61eee1554486a4df34",
+    "bytes": 2371686
+  },
+  {
+    "file": "lib-decoder-ffmpeg-release.aar",
+    "sha256": "472ad29e08fc0c5e12c0c89e96d1130ff0529eefba31e85d31b14dccaec7baa4",
+    "bytes": 5028793
+  },
+  {
+    "file": "lib-exoplayer-hls-release.aar",
+    "sha256": "826cbaddd86d9ff5165db4bbf7e0951490533351152bfff34e98e61b9b5f5119",
+    "bytes": 217410
+  },
+  {
+    "file": "lib-exoplayer-release.aar",
+    "sha256": "4c3047e76a9cb64f03c95762a696ad2aba0e200431fefe4d8c5b3803ac409cca",
+    "bytes": 1601344
+  },
+  {
+    "file": "lib-extractor-release.aar",
+    "sha256": "d611a11f7bc6cef11f789c1cae4fe75ab9332a9e393405e98cfa8e147d698316",
+    "bytes": 782911
+  },
+  {
+    "file": "lib-nuvio-engine-android-0.1.6.aar",
+    "sha256": "66b049a3625bfdc39c3b5d25a0af9bbc127c530512617e9f57cd988c019d33d6",
+    "bytes": 16371515
+  },
+  {
+    "file": "nextlib-mediainfo-local.aar",
+    "sha256": "509e645e0f4232bdd3c6e1b2e4b82c3686140a0355f13656890f3641d8b7fb53",
+    "bytes": 14882381
+  },
+  {
+    "file": "nuvio-libass-release.aar",
+    "sha256": "4d3a51b7fd4bdf94399bbcf7cc1ee9b231a0f0b72725772d9f5efe0ff717c029",
+    "bytes": 5245885
+  },
+  {
+    "file": "quickjs-kt-android-1.0.5-nuvio.aar",
+    "sha256": "7bbafcaf3c94feac4a329c9861f5ffc1bf470841a28a34c3c305f801cb7948ab",
+    "bytes": 1884250
+  }
+]

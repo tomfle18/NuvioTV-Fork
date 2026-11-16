@@ -64,3 +64,8 @@ AGENTS.md
 docs/
 status-page/
 sentry.properties
+/.tools/
+/.gradle-local/
+/baseline-gradle.log
+**/target/
+!scripts/rust_range_server.py
