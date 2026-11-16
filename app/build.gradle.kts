@@ -97,6 +97,33 @@ val doviIncludeDirPath = resolveProperty(devProperties, localProperties, "DOVI_L
 val doviPrebuiltRootPath = resolveProperty(devProperties, localProperties, "DOVI_LIBDOVI_PREBUILT_ROOT")
 val sponsorNames = resolveProperty(devProperties, localProperties, "SPONSOR_NAMES", "ragmehos.")
 
+// Native streaming is optional at build time and opt-in at runtime. Both shipping ARM ABIs use API 24.
+val withRustStreaming = providers.gradleProperty("withRustStreaming").orNull?.toBoolean() ?: true
+val rustJniDirectory = layout.buildDirectory.dir("generated/rustJni")
+val buildRustStreaming by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build the experimental Rust HTTP engine for ARM64 and ARM32 (cargo-ndk 4.1.2)"
+    workingDir(rootProject.file("native/streaming-engine"))
+    inputs.files(fileTree(rootProject.file("native/streaming-engine/src")),
+        rootProject.file("native/streaming-engine/Cargo.toml"), rootProject.file("native/streaming-engine/Cargo.lock"),
+        rootProject.file("native/streaming-engine/rust-toolchain.toml"),
+        rootProject.file("native/streaming-engine/.cargo/config.toml"))
+    outputs.dir(rustJniDirectory)
+    environment("CARGO_TARGET_DIR", layout.buildDirectory.dir("rust-target").get().asFile.absolutePath)
+    commandLine(providers.environmentVariable("RUST_CARGO").orElse("cargo").get(),
+        "ndk", "-t", "arm64-v8a", "-t", "armeabi-v7a", "--platform", "24", "-o",
+        rustJniDirectory.get().asFile.absolutePath, "build", "--release", "--locked")
+    doFirst {
+        environment("ANDROID_NDK_HOME", android.sdkDirectory.resolve("ndk/29.0.14206865").absolutePath)
+    }
+}
+if (withRustStreaming) {
+    android.sourceSets.getByName("main").jniLibs.srcDir(rustJniDirectory)
+    tasks.configureEach {
+        if (name.startsWith("merge") && name.endsWith("JniLibFolders")) dependsOn(buildRustStreaming)
+    }
+}
+
 fun env(name: String): String? = providers.environmentVariable(name).orNull
 
 fun truthy(value: String?): Boolean {

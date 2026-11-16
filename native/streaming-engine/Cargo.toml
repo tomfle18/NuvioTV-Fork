@@ -1,0 +1,23 @@
+[package]
+name = "nuvio-streaming"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+publish = false
+
+[lib]
+name = "nuvio_streaming"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+reqwest = { version = "=0.12.24", default-features = false, features = ["rustls-tls", "stream"] }
+tokio = { version = "=1.48.0", features = ["rt-multi-thread", "sync", "time", "macros", "net"] }
+tokio-util = { version = "=0.7.16", features = ["rt"] }
+jni = "=0.21.1"
+httpdate = "=1.0.3"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "unwind"
+strip = "debuginfo"

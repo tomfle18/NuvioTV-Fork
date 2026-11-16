@@ -526,6 +526,18 @@ internal class ConnectionLedger(
         }
     }
 
+    /** Rust request admission and accounting are one operation, shared with thumbnails and Kotlin requests. */
+    fun tryStreaming(url: String, wanted: Int): Slot? {
+        val key = LedgerKey.of(url) ?: return null
+        return lock.withLock {
+            val e = entry(key)
+            val total = LedgerKey.knownTotal(key)
+            if (e.playback >= wanted.coerceAtLeast(1) || (total != null && e.playback + e.thumbs >= total)) return@withLock null
+            add(e, Kind.PLAYBACK)
+            Slot(key, Kind.PLAYBACK, clock(), busy = false)
+        }
+    }
+
     /** Playback's request: counted at once, never waits. [stream]: a single open stream that may sit idle. */
     fun playback(url: String?, stream: Boolean = false): Slot? = runCatching {
         val key = LedgerKey.of(url)

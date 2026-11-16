@@ -171,3 +171,5 @@
 
 -dontwarn java.beans.ConstructorProperties
 -dontwarn java.beans.Transient
+-keep class com.nuvio.tv.core.streaming.RustStreamingBridge { *; }
+-keep class com.nuvio.tv.core.streaming.RustNetworkHooks { *; }
