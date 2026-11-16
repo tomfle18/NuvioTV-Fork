@@ -42,6 +42,12 @@ pub struct Validated {
     pub ranged: bool,
 }
 pub fn validate(status: u16, headers: &HeaderMap, start: u64, end: u64) -> Result<Validated> {
+    // Android owns the mutable cookie jar. A source can introduce cookies on its
+    // first response even when qualification saw an empty jar. Let Kotlin repeat
+    // that open before publishing bytes rather than silently dropping Set-Cookie.
+    if matches!(status, 200 | 206) && headers.contains_key("set-cookie") {
+        return Err(Error::Unsupported);
+    }
     if one(headers, CONTENT_ENCODING.as_str())?.is_some_and(|s| !s.eq_ignore_ascii_case("identity"))
     {
         return Err(Error::Protocol);
@@ -137,6 +143,12 @@ mod tests {
         assert!(validate(200, &HeaderMap::new(), 5, 20).is_err());
         h.append(CONTENT_RANGE, "bytes 5-9/10".parse().unwrap());
         assert!(validate(206, &h, 5, 20).is_err());
+        let mut cookies = HeaderMap::new();
+        cookies.insert("set-cookie", "session=fixture; HttpOnly".parse().unwrap());
+        assert_eq!(
+            validate(200, &cookies, 0, 20).err(),
+            Some(Error::Unsupported)
+        );
     }
     #[test]
     fn encoding_and_changed_identity() {

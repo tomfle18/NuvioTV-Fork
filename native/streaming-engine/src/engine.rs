@@ -725,6 +725,9 @@ impl Session {
                 return Err(Error::Cancelled);
             }
             if matches!(status, 301 | 302 | 303 | 307 | 308) {
+                if response.headers().contains_key("set-cookie") {
+                    return Err(Error::Unsupported);
+                }
                 if redirects == 5 {
                     return Err(Error::Protocol);
                 }

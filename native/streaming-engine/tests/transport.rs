@@ -36,6 +36,8 @@ enum Mode {
     StallBody,
     OneOnly,
     CrossOrigin,
+    Cookie,
+    RedirectCookie,
 }
 struct Fixture {
     url: String,
@@ -201,7 +203,13 @@ impl Fixture {
                                 let _=write!(stream,"HTTP/1.1 429 Limited\r\nRetry-After: 0\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                                 return;
                             }
-                            if matches!(mode, Mode::Redirect) && text.starts_with("get /file ") {
+                            if matches!(mode, Mode::Redirect | Mode::RedirectCookie)
+                                && text.starts_with("get /file ")
+                            {
+                                if matches!(mode, Mode::RedirectCookie) {
+                                    let _=write!(stream,"HTTP/1.1 302 Found\r\nLocation: /final\r\nSet-Cookie: fixture=one\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                                    return;
+                                }
                                 let _=write!(stream,"HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
                                 return;
                             }
@@ -251,6 +259,9 @@ impl Fixture {
                             }
                             if matches!(mode, Mode::Gzip) {
                                 response += "Content-Encoding: gzip\r\n";
+                            }
+                            if matches!(mode, Mode::Cookie) {
+                                response += "Set-Cookie: fixture=one\r\n";
                             }
                             if matches!(mode, Mode::Chunked) {
                                 response += "Transfer-Encoding: chunked\r\n\r\n";
@@ -524,6 +535,18 @@ fn errors_are_never_silent_eof() {
             }
         }
         s.close();
+    }
+}
+#[test]
+fn new_cookie_context_is_delegated_before_any_bytes_are_delivered() {
+    for mode in [Mode::Cookie, Mode::RedirectCookie] {
+        let f = Fixture::new(mode, 1024 * 1024);
+        let s = f.session(1, false, SEGMENT * 8);
+        let r = s.reader(0, None).unwrap();
+        assert_eq!(r.wait_open(), Err(Error::Unsupported));
+        assert_eq!(s.stats()[1], 0);
+        assert_eq!(s.stats()[6], 1);
+        s.shutdown().unwrap();
     }
 }
 #[test]
