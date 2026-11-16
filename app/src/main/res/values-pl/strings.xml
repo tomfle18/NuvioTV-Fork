@@ -1,4 +1,8 @@
 <resources>
+    <string name="playback_rust_http">Rust HTTP (eksperymentalny)</string>
+    <string name="diag_label_http_backend">Backend HTTP</string>
+    <string name="playback_rust_http_sub">Bufor sieciowy Rust dla progresywnych MKV/MP4. Wyłączony: Kotlin. Zmiana od następnego odtwarzania.</string>
+    <string name="playback_http_backend_status">Ostatni backend HTTP: %1$s</string>
     <string name="type_movie">Film</string>
     <string name="type_series">Serial</string>
 

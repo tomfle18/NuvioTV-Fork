@@ -6,6 +6,7 @@ import com.nuvio.tv.core.network.IPv4FirstDns
 import com.nuvio.tv.core.network.ServerTrust
 import com.nuvio.tv.core.player.thumbnail.ConnectionLedger
 import com.nuvio.tv.core.player.thumbnail.Refusal
+import com.nuvio.tv.core.player.thumbnail.LedgerKey
 import com.nuvio.tv.ui.screens.player.HostSpeeds
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.util.concurrent.ConcurrentHashMap
@@ -19,12 +20,29 @@ internal object RustNetworkHooks {
     private val slots = ConcurrentHashMap<Long, Held>()
 
     fun acquire(url: String, wanted: Int): Long {
-        val hostCap = HostSpeeds.keyOf(url)?.let { HostSpeeds.limitOf(it) } ?: wanted
+        val hostCap = capacity(url, wanted)
         val slot = ConnectionLedger.app.tryStreaming(url, minOf(wanted, hostCap)) ?: return 0
         val id = next.getAndIncrement()
         if (id <= 0) { slot.close(); return 0 }
         slots[id] = Held(url, slot)
         return id
+    }
+
+    fun capacity(url: String, wanted: Int): Int {
+        val key = LedgerKey.of(url)
+        val maximum = minOf(wanted.coerceAtLeast(1), LedgerKey.knownTotal(key) ?: wanted.coerceAtLeast(1))
+        val learned = listOfNotNull(HostSpeeds.keyOf(url), key).mapNotNull { HostSpeeds.limitOf(it) }.fold(maximum, ::minOf)
+        return ConnectionLedger.app.playbackRoom(url, learned)
+    }
+
+    fun history(url: String): LongArray = HostSpeeds.keyOf(url)?.let { HostSpeeds.get(it) }?.let {
+        longArrayOf(it.perDownloadBps, it.firstByteMs)
+    } ?: LongArray(0)
+
+    fun limit(url: String, count: Int, blocked: Boolean) {
+        listOfNotNull(HostSpeeds.keyOf(url), LedgerKey.of(url)).distinct().forEach {
+            HostSpeeds.noteLimit(it, count.coerceAtLeast(1), blocks = blocked)
+        }
     }
 
     fun release(token: Long, status: Int) {
@@ -41,6 +59,9 @@ internal object RustNetworkHooks {
 
     fun allowed(url: String): Boolean {
         val parsed = url.toHttpUrlOrNull() ?: return false
+        if (!parsed.isHttps && !android.security.NetworkSecurityPolicy.getInstance().isCleartextTrafficPermitted(parsed.host)) return false
+        val proxy = java.net.ProxySelector.getDefault()?.select(java.net.URI(url)).orEmpty()
+        if (proxy.any { it.type() != java.net.Proxy.Type.DIRECT }) return false
         // Configured media servers and the mutable extension cookie context retain Android's transport.
         return !ServerTrust.isServerHost(parsed.host) && parsed.username.isEmpty() && parsed.password.isEmpty() &&
             NuvioApplication.extensionCookieJar.loadForRequest(parsed).isEmpty()

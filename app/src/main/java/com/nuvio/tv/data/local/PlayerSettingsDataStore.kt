@@ -443,6 +443,7 @@ data class PlayerSettings(
     val bufferEngineEnabled: Boolean = false,
     val parallelNetworkEnabled: Boolean = false,
     val autoSpeedupEnabled: Boolean = true,
+    val rustHttpEnabled: Boolean = false,
     /** When true the device memory budget caps the buffer; when false Target Buffer Size drives it. */
     val bufferBudgetManaged: Boolean = DEFAULT_BUFFER_BUDGET_MANAGED,
     /** When true, target buffer slider max is raised to 2GB regardless of device memory. */
@@ -961,6 +962,7 @@ class PlayerSettingsDataStore @Inject constructor(
     private val bufferEngineEnabledKey = booleanPreferencesKey("buffer_engine_enabled")
     private val parallelNetworkEnabledKey = booleanPreferencesKey("parallel_network_enabled")
     private val autoSpeedupEnabledKey = booleanPreferencesKey("auto_speedup_enabled")
+    private val rustHttpEnabledKey = booleanPreferencesKey("rust_http_experimental")
     private val allowLargeTargetBufferKey = booleanPreferencesKey("allow_large_target_buffer")
     private val bufferBudgetManagedKey = booleanPreferencesKey("buffer_budget_managed")
     private val parallelConnectionCountKey = intPreferencesKey("parallel_connection_count")
@@ -1527,6 +1529,7 @@ class PlayerSettingsDataStore @Inject constructor(
                 bufferEngineEnabled = prefs[bufferEngineEnabledKey] ?: false,
                 parallelNetworkEnabled = prefs[parallelNetworkEnabledKey] ?: false,
                 autoSpeedupEnabled = prefs[autoSpeedupEnabledKey] ?: true,
+                rustHttpEnabled = prefs[rustHttpEnabledKey] ?: false,
                 allowLargeTargetBuffer = prefs[allowLargeTargetBufferKey] ?: PlayerSettings.DEFAULT_ALLOW_LARGE_TARGET_BUFFER,
                 bufferBudgetManaged = prefs[bufferBudgetManagedKey] ?: PlayerSettings.DEFAULT_BUFFER_BUDGET_MANAGED,
                 parallelConnectionCount = run {
@@ -2821,6 +2824,10 @@ class PlayerSettingsDataStore @Inject constructor(
 
     suspend fun setAutoSpeedupEnabled(enabled: Boolean) {
         store().edit { it[autoSpeedupEnabledKey] = enabled }
+    }
+
+    suspend fun setRustHttpEnabled(enabled: Boolean) {
+        store().edit { it[rustHttpEnabledKey] = enabled }
     }
 
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)

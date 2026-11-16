@@ -3146,6 +3146,27 @@ internal fun PlayerRuntimeController.armStartCushion(url: String) {
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun PlayerRuntimeController.sampleAutoSpeedup(player: Player, positionMs: Long) {
     val keeper = autoSpeedupKeeper()
+    val rustBudget = mediaSourceFactory.rustReservedBytes
+    if (rustBudget > 0) {
+        val control = keeper?.control
+        val bitrate = AutoSpeedup.fileBitrate(PlaybackByteCounter.contentLengthFor(currentStreamUrl), currentVideoSize, player.duration)
+        val floor = keeper?.floorBytes ?: 0L
+        val allowed = com.nuvio.tv.core.streaming.StreamingBudgetBridge.allowance(rustBudget,
+            control?.uncappedBudgetBytes ?: 0L, floor, bitrate)
+        val reserved = mediaSourceFactory.adjustRustBudget(allowed)
+        keeper?.setLendFloorBytes(com.nuvio.tv.core.player.BufferMemoryKeeper.lendFloorBytes(bitrate, 65536))
+        keeper?.setLendingHeld(false)
+        keeper?.setLentBytes(reserved)
+        val full = control != null && control.allocatorTargetBytes() > 0 &&
+            control.bufferAllocator.totalBytesAllocated >= control.allocatorTargetBytes() - FULL_MARGIN_BYTES
+        mediaSourceFactory.sampleRustPlayer(
+            android.os.SystemClock.elapsedRealtime(), (player.bufferedPosition - positionMs).coerceAtLeast(0),
+            player.isLoading, player.isPlaying, full,
+            bitrate, lastSeekWallMs, rebufferCount, (keeper?.pressureLevel ?: 0) > 0,
+            AutoSpeedup.bufferTargetMs(control?.maxBufferMs?.toLong() ?: 0, control?.allocatorTargetBytes()?.toLong() ?: 0, bitrate)
+        )
+        return
+    }
     if (!AutoSpeedup.active) {
         if (keeper != null && keeper.lentBytes > 0L) keeper.setLentBytes(0L)
         return
@@ -3242,7 +3263,7 @@ private fun PlayerRuntimeController.sampleAutoSpeedup(player: Player, positionMs
 
 /** The buffer keeper, or on stock buffers (which have none) one used only to lend memory to the extra downloads. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun PlayerRuntimeController.autoSpeedupKeeper(): com.nuvio.tv.core.player.BufferMemoryKeeper? {
+internal fun PlayerRuntimeController.autoSpeedupKeeper(): com.nuvio.tv.core.player.BufferMemoryKeeper? {
     bufferMemoryKeeper?.let { return it }
     val control = _loadControl as? com.nuvio.tv.core.player.BufferBudgetControl ?: return null
     autoSpeedupLender?.takeIf { it.control === control }?.let { return it }

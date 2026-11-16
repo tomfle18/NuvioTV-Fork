@@ -47,7 +47,8 @@ object PlayerMemoryReporter {
         return "rssMb=$rssMb peakMb=$peakRssMb " +
             "javaMb=${info.dalvikPrivateDirty / 1024} nativeMb=${info.nativePrivateDirty / 1024} " +
             "$allocStats arenaPoolMb=${NuvioExoPlayerPerformanceHelper.NATIVE_ARENA_POOL_BYTES / (1024 * 1024)} " +
-            "deviceAvailMb=${system.availMem / (1024L * 1024L)} deviceLow=${system.lowMemory}"
+            "deviceAvailMb=${system.availMem / (1024L * 1024L)} deviceLow=${system.lowMemory} " +
+            com.nuvio.tv.core.streaming.StreamingDiagnostics.metricsLabel()
     }
 
     /** Logs [prefix] with a snapshot behind it; the memory map read runs off the caller's thread. */

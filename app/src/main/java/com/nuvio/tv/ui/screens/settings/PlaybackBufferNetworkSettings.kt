@@ -98,6 +98,14 @@ internal fun PlaybackBufferNetworkSection(
 
     SettingsSectionLabel(text = stringResource(R.string.playback_network_label))
     SettingsToggleRow(
+        title = stringResource(R.string.playback_rust_http),
+        subtitle = stringResource(R.string.playback_rust_http_sub),
+        checked = settings.rustHttpEnabled,
+        onToggle = { onUpdate { setRustHttpEnabled(!settings.rustHttpEnabled) } }
+    )
+    val transportStatus by com.nuvio.tv.core.streaming.StreamingDiagnostics.status.collectAsStateWithLifecycle()
+    SettingsNote(text = stringResource(R.string.playback_http_backend_status, transportStatus))
+    SettingsToggleRow(
         title = stringResource(R.string.playback_net_auto_speedup),
         subtitle = stringResource(R.string.playback_net_auto_speedup_sub),
         checked = settings.autoSpeedupEnabled,

@@ -1,4 +1,8 @@
 <resources>
+    <string name="playback_rust_http">Rust HTTP (experimental)</string>
+    <string name="diag_label_http_backend">HTTP backend</string>
+    <string name="playback_rust_http_sub">Use Rust for progressive MKV/MP4 network buffering. Off: Kotlin. Applies to the next playback.</string>
+    <string name="playback_http_backend_status">Last HTTP backend: %1$s</string>
     <string name="app_name">Nuvio Arc</string>
     <string name="tv_channel_continue_watching">Continue watching</string>
     <string name="type_movie">Movie</string>

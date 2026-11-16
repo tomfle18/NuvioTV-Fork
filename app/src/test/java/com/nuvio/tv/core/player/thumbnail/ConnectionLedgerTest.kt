@@ -16,6 +16,35 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Requests in flight per server: playback never waits, thumbnails only start while there is room. */
 class ConnectionLedgerTest {
+    @Test fun simultaneousRustAdmissionNeverOversubscribesTheSharedServiceLimit() {
+        val l = ledger()
+        val start = CountDownLatch(1)
+        val granted = java.util.Collections.synchronizedList(mutableListOf<ConnectionLedger.Slot>())
+        val workers = List(16) { index -> Thread {
+            start.await()
+            l.tryStreaming(if (index % 2 == 0) tb else tb2, 8)?.let { granted += it }
+        } }
+        workers.forEach { it.start() }; start.countDown(); workers.forEach { it.join(1000) }
+        assertTrue(workers.none { it.isAlive })
+        assertEquals(8, granted.size)
+        assertEquals(8, l.inFlight(tb))
+        granted.forEach { it.close() }
+        assertEquals(0, l.inFlight(tb2))
+    }
+    @Test fun rustAdmissionCountsExistingPlaybackAndAllTorboxHostsAtomically() {
+        val l = ledger()
+        l.notePlaybackConnections(8)
+        val slots = mutableListOf<ConnectionLedger.Slot>()
+        repeat(8) { slots += checkNotNull(l.tryStreaming(if (it % 2 == 0) tb else tb2, 8)) }
+        assertNull(l.tryStreaming(tb, 8))
+        assertEquals(8, l.inFlight(tb2))
+        slots.forEach { it.close(); it.close() }
+        assertEquals(0, l.inFlight(tb))
+        val kotlin = l.playback(tb)!!
+        assertNull(l.tryStreaming(tb2, 1))
+        kotlin.close()
+        l.tryStreaming(tb2, 1)!!.close()
+    }
     private var now = 1_000_000L
     private var wallNow = 50L * 24 * 60 * 60 * 1000
     private fun ledger() = ConnectionLedger(clock = { now }, wallClock = { wallNow })

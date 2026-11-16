@@ -100,6 +100,7 @@ internal fun LazyListScope.diagnosticsCardItems(
                 stringResource(R.string.diag_section_source_hardware_sub)
             )
             DiagnosticRow(stringResource(R.string.diag_label_host), diagnostics.host)
+            DiagnosticRow(stringResource(R.string.diag_label_http_backend), diagnostics.transportBackend)
             // The host that actually served the bytes after the
             // redirect. Omitted when nothing was captured (direct/Emby/NAS
             // sources never redirect) or when a cosmetic redirect resolved back

@@ -1672,6 +1672,10 @@ class StreamScreenViewModel @Inject constructor(
         com.nuvio.tv.ui.screens.player.SlowStartServer.noteStream(
             playbackInfo.url, playbackInfo.streamName, playbackInfo.streamDescription, playbackInfo.addonName
         )
+        // Rust owns its own bounded warm read later, with the final source identity and budget.
+        if (playerSettingsDataStore.playerSettings.first().rustHttpEnabled &&
+            playbackInfo.url?.let { com.nuvio.tv.ui.screens.player.PlayerMediaSourceFactory.inferMimeType(it, playbackInfo.filename) }
+                in setOf("video/mp4", "video/x-matroska")) return
         com.nuvio.tv.ui.screens.player.PlayerPlaybackNetworking.prewarmSelectedPlayback(
             playbackInfo.url, playbackInfo.headers
         )

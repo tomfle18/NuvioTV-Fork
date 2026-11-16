@@ -21,6 +21,7 @@ data class LastPlaybackDiagnostics(
     // completed; may equal [host] on cosmetic (same-host) redirects, which
     // renderers suppress at display time rather than here.
     val resolvedServingHost: String? = null,
+    val transportBackend: String = "unknown",
     val streamUrl: String? = null,
     val filename: String? = null,
     val headersJson: String? = null,
@@ -101,6 +102,7 @@ data class LastPlaybackDiagnostics(
     fun toJson(): String = JSONObject().apply {
         put("timestampMs", timestampMs)
         put("host", host)
+        put("transportBackend", transportBackend)
         put("resolvedServingHost", resolvedServingHost ?: JSONObject.NULL)
         put("streamUrl", streamUrl ?: JSONObject.NULL)
         put("filename", filename ?: JSONObject.NULL)
@@ -154,6 +156,7 @@ data class LastPlaybackDiagnostics(
             LastPlaybackDiagnostics(
                 timestampMs = o.optLong("timestampMs", 0L),
                 host = o.optString("host", ""),
+                transportBackend = o.optString("transportBackend", "unknown"),
                 resolvedServingHost = o.optString("resolvedServingHost", "").let { if (it.isBlank() || it == "null") null else it },
                 streamUrl = o.optString("streamUrl", "").let { if (it.isBlank() || it == "null") null else it },
                 filename = o.optString("filename", "").let { if (it.isBlank() || it == "null") null else it },

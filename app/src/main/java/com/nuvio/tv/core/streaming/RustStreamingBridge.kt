@@ -9,7 +9,7 @@ internal object RustStreamingBridge {
     val availability: String? by lazy {
         try {
             System.loadLibrary("nuvio_streaming")
-            if (version() == 1) null else "contract_version"
+            if (version() == 3) null else "contract_version"
         } catch (_: LinkageError) {
             "native_library_unavailable"
         } catch (_: SecurityException) {
@@ -18,6 +18,8 @@ internal object RustStreamingBridge {
     }
 
     external fun version(): Int
+    /** Live sessions, live reader handles, globally allocated buffer capacity including free pools. */
+    external fun resources(): LongArray
     external fun create(url: String, headers: Array<String>, budget: Long, connections: Int, piece: Long,
         prefetch: Int, adaptive: Int, hooks: RustNetworkHooks): Long
     external fun open(session: Long, position: Long, length: Long): Long
@@ -28,7 +30,8 @@ internal object RustStreamingBridge {
     external fun closeReader(reader: Long)
     external fun releaseSession(session: Long)
     external fun updateLimit(session: Long, bytes: Long)
-    /** network, delivered, allocated (including pool), free pool, limit, live requests, request count */
+    external fun sample(session: Long, values: LongArray)
+    /** network payload, delivered, allocated, free pool, limit, live requests, requests, desired, piece, peak requests */
     external fun stats(session: Long): LongArray
     /** Final URI followed by alternating header names and values, retaining duplicate header values. */
     external fun info(session: Long): Array<String>

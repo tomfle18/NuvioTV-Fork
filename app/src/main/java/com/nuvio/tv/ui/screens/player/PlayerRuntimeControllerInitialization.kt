@@ -256,6 +256,7 @@ internal fun PlayerRuntimeController.applyMediaSourceFactorySettings(playerSetti
     }
     mediaSourceFactory.customNetworkEnabled = playerSettings.parallelNetworkEnabled
     mediaSourceFactory.autoSpeedupEnabled = playerSettings.autoSpeedupEnabled
+    mediaSourceFactory.rustHttpEnabled = playerSettings.rustHttpEnabled
     com.nuvio.tv.core.network.PlaybackSocketFactory.windowEnabled = playerSettings.autoSpeedupEnabled
     mediaSourceFactory.nuvioPerformanceModeEnabled = playerSettings.nuvioPerformanceModeEnabled
     mediaSourceFactory.nativeEngineEnabled = playerSettings.nuvioPerformanceModeEnabled
@@ -1765,6 +1766,19 @@ internal fun PlayerRuntimeController.initializePlayer(
                 floorMb = sizedFloorMb,
                 oneGbBox = oneGbBox,
             )
+            mediaSourceFactory.rustBudgetConsumer = { bytes ->
+                autoSpeedupKeeper()?.apply {
+                    setLendFloorBytes(if (bytes > 0) BufferMemoryKeeper.lendFloorBytes(fileBitrateAtBuild, 65536) else 0)
+                    setLendingHeld(false)
+                    setLentBytes(bytes)
+                }
+            }
+            mediaSourceFactory.rustBudgetAllowance = { wanted ->
+                val keeper = autoSpeedupKeeper()
+                val total = keeper?.control?.uncappedBudgetBytes ?: 0L
+                val floor = keeper?.floorBytes ?: total
+                com.nuvio.tv.core.streaming.StreamingBudgetBridge.allowance(wanted, total, floor, fileBitrateAtBuild)
+            }
             (_loadControl as? BufferBudgetControl)?.let {
                 Log.i(PlayerRuntimeController.TAG, "BUFFER_TOPUP: ${it.topUp.describe()} reused=$reuseLivePlayer")
             }
@@ -2388,6 +2402,12 @@ internal fun PlayerRuntimeController.initializePlayer(
                                     videoCodecs = currentVideoTrackCodecs
                                 ) && switchToMpvForUnsupportedFormat(error.errorCodeName)
 
+                        if (!isInBackground && mediaSourceFactory.prepareRustRestart(error)) {
+                            // Native requests are drained first; recreate extractors at the saved playback position.
+                            scheduleOwnedPlaybackRecovery(currentPosition, 0L)
+                            return
+                        }
+
                         // Every branch below re-initialises playback and
                         // each is individually self-gated, but chained they can loop
                         // a persistently failing pipeline for minutes (for example
@@ -2672,6 +2692,7 @@ internal fun PlayerRuntimeController.initializePlayer(
                         }
 
                         val errorDiagnostics = currentDiagnostics.copy(
+                            transportBackend = com.nuvio.tv.core.streaming.StreamingDiagnostics.status.value,
                             rebufferCount = rebufferCount,
                             rebufferTotalMs = rebufferTotalMs,
                             result = "Error: $detailedError"
@@ -4572,6 +4593,7 @@ private fun PlayerRuntimeController.recordFirstFrameDiagnostics(
         // listener-carrying client, so the value is populated whenever the
         // source actually redirected.
         resolvedServingHost = PlaybackConnectionEvents.resolvedHost(),
+        transportBackend = com.nuvio.tv.core.streaming.StreamingDiagnostics.status.value,
         vodCacheState = mediaSourceFactory.vodCacheStateLabel(context),
         dv7DoviCalls = conversionCalls.toInt(),
         dv7DoviSuccess = conversionSucceeded.toInt(),

@@ -571,6 +571,10 @@ class PlaybackSettingsViewModel @Inject constructor(
         playerSettingsDataStore.setAutoSpeedupEnabled(enabled)
     }
 
+    suspend fun setRustHttpEnabled(enabled: Boolean) {
+        playerSettingsDataStore.setRustHttpEnabled(enabled)
+    }
+
     suspend fun setAllowLargeTargetBuffer(enabled: Boolean) {
         playerSettingsDataStore.setAllowLargeTargetBuffer(enabled)
     }

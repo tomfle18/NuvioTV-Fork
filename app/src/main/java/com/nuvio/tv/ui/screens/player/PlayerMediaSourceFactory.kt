@@ -120,6 +120,13 @@ internal class PlayerMediaSourceFactory(
     var useParallelConnections: Boolean = PlayerSettings.DEFAULT_USE_PARALLEL_CONNECTIONS
     var customNetworkEnabled: Boolean = false
     var autoSpeedupEnabled: Boolean = true
+    var rustHttpEnabled: Boolean = false
+    @Volatile private var rustFactory: com.nuvio.tv.core.streaming.RustHttpDataSource.Factory? = null
+    private val rustFallbackGate = com.nuvio.tv.core.streaming.StreamingFallbackGate()
+    var rustBudgetConsumer: (Long) -> Unit = {}
+    var rustBudgetAllowance: (Long) -> Long = { 0L }
+    val rustReservedBytes: Long get() = rustFactory?.takeIf { it.disabledReason == null }?.reservedBytes ?: 0L
+    fun adjustRustBudget(allowed: Long): Long = try { rustFactory?.adjustBudget(allowed) ?: 0L } catch (_: java.io.IOException) { rustReservedBytes }
     var parallelConnectionCount: Int = PlayerSettings.DEFAULT_PARALLEL_CONNECTION_COUNT
     var parallelChunkSizeKb: Int = PlayerSettings.DEFAULT_PARALLEL_CHUNK_SIZE_KB
     // Gated by the parallel network toggle because its only use is the native memory argument to
@@ -186,6 +193,7 @@ internal class PlayerMediaSourceFactory(
 
     /** Connections playback opens to [url]. */
     fun playbackConnections(url: String?): Int {
+        rustFactory?.takeIf { it.url == url && it.disabledReason == null }?.let { return it.connectionReservation }
         val mediaServer = url != null && isMediaServerUrl(url)
         return if (usesParallelConnections(useParallelConnections, mediaServer)) parallelConnectionCount else 1
     }
@@ -268,9 +276,18 @@ internal class PlayerMediaSourceFactory(
             mimeTypeOverride = mimeTypeOverride
         )
         notePlaybackStart(url)
+        val sanitizedHeaders = sanitizeHeaders(headers)
+        val rustReason = rustBackendReason(url, shape.resolvedMimeType, shape.isHls || shape.isDash, sanitizedHeaders)
+        if (rustReason == null) {
+            PlayerPlaybackNetworking.cancelSelectedPlaybackPrewarm(url, sanitizedHeaders)
+            obtainRustFactory(url, sanitizedHeaders, LedgerDataSourceFactory(
+                PlayerPlaybackNetworking.createDataSourceFactory(context, sanitizedHeaders)
+            ), shape.mp4SessionMode).also { if (!vodCacheEnabled) it.prewarm() }
+            return
+        }
+        if (rustHttpEnabled && rustReason == "no_network_memory_budget") return
         if (!shape.useChunkSessionSource || shape.mp4SessionMode) return
         val uri = runCatching { Uri.parse(url) }.getOrNull() ?: return
-        val sanitizedHeaders = sanitizeHeaders(headers)
         val okHttpFactory = OkHttpDataSource.Factory(PieceCallFactory(chunkSessionClient(url))).apply {
             setDefaultRequestProperties(sanitizedHeaders)
             if (sanitizedHeaders.none { it.key.equals("User-Agent", ignoreCase = true) }) {
@@ -374,59 +391,74 @@ internal class PlayerMediaSourceFactory(
         val mp4SessionMode = chunkSessionShape.mp4SessionMode
         val useChunkSessionSource = chunkSessionShape.useChunkSessionSource
         parallelStartupPrefetchUnlocked.set(!useChunkSessionSource)
-        val networkProgressiveFactory: DataSource.Factory = if (useChunkSessionSource) {
-            if (mp4SessionMode) {
-                Log.i(
-                    "PlayerMediaSourceFactory",
-                    "MP4_SESSION engaged: single-connection chunk session " +
-                        "(${MP4_SESSION_CHUNK_BYTES / (1024L * 1024L)} MB chunks) " +
-                        "for progressive MP4 with parallel connections off"
-                )
-            }
-            val okHttpFactory = OkHttpDataSource.Factory(PieceCallFactory(chunkSessionClient(url))).apply {
-                setDefaultRequestProperties(sanitizedHeaders)
-                if (sanitizedHeaders.none { it.key.equals("User-Agent", ignoreCase = true) }) {
-                    setUserAgent(DEFAULT_USER_AGENT)
+        val kotlinProgressiveFactory: DataSource.Factory by lazy {
+            if (useChunkSessionSource) {
+                if (mp4SessionMode) {
+                    Log.i(
+                        "PlayerMediaSourceFactory",
+                        "MP4_SESSION engaged: single-connection chunk session " +
+                            "(${MP4_SESSION_CHUNK_BYTES / (1024L * 1024L)} MB chunks) " +
+                            "for progressive MP4 with parallel connections off"
+                    )
                 }
-            }
-            run {
-                val effectiveConnections = chunkSessionShape.effectiveConnections
-                val effectiveChunkBytes = chunkSessionShape.effectiveChunkBytes
-                ParallelRangeDataSource.Factory(
-                    okHttpFactory,
-                    effectiveConnections,
-                    effectiveChunkBytes,
-                    defaultRequestHeaders = sanitizedHeaders,
-                    useNativeMemory = nuvioPerformanceModeEnabled,
-                    prefetchDepthChunks = computePrefetchDepthChunks(
+                val okHttpFactory = OkHttpDataSource.Factory(PieceCallFactory(chunkSessionClient(url))).apply {
+                    setDefaultRequestProperties(sanitizedHeaders)
+                    if (sanitizedHeaders.none { it.key.equals("User-Agent", ignoreCase = true) }) {
+                        setUserAgent(DEFAULT_USER_AGENT)
+                    }
+                }
+                run {
+                    val effectiveConnections = chunkSessionShape.effectiveConnections
+                    val effectiveChunkBytes = chunkSessionShape.effectiveChunkBytes
+                    ParallelRangeDataSource.Factory(
+                        okHttpFactory,
                         effectiveConnections,
                         effectiveChunkBytes,
-                        mp4SessionMode
-                    ),
-                    shouldAllowBackgroundPrefetch = { true },
-                    // MP4 session mode keeps whole-chunk retention: its
-                    // scatter-read cursors revisit regions, and a retained chunk
-                    // makes every repeat visit free.
-                    allowContinuationReopen = !mp4SessionMode,
-                    onResolvedUri = { resolved -> currentVodCacheResolvedUrl = resolved?.toString() }
+                        defaultRequestHeaders = sanitizedHeaders,
+                        useNativeMemory = nuvioPerformanceModeEnabled,
+                        prefetchDepthChunks = computePrefetchDepthChunks(
+                            effectiveConnections,
+                            effectiveChunkBytes,
+                            mp4SessionMode
+                        ),
+                        shouldAllowBackgroundPrefetch = { true },
+                        // MP4 session mode keeps whole-chunk retention: its
+                        // scatter-read cursors revisit regions, and a retained chunk
+                        // makes every repeat visit free.
+                        allowContinuationReopen = !mp4SessionMode,
+                        onResolvedUri = { resolved -> currentVodCacheResolvedUrl = resolved?.toString() }
+                    )
+                }
+            } else if (isLoopbackUrl(url)) {
+                PlayerPlaybackNetworking.createHttpDataSourceFactory(sanitizedHeaders, useLongReadTimeout = true)
+            } else if (usesAutoSpeedup(
+                    enabled = autoSpeedupEnabled,
+                    customNetwork = customNetworkEnabled,
+                    mediaServer = isMediaServerUrl(url),
+                    adaptive = isHls || isDash,
+                    slowStart = SlowStartServer.matches(url)
                 )
+            ) {
+                autoSpeedupFactory(context, url, LedgerDataSourceFactory(httpDataSourceFactory), sanitizedHeaders)
+            } else {
+                LedgerDataSourceFactory(httpDataSourceFactory)
             }
-        } else if (isLoopbackUrl(url)) {
-            PlayerPlaybackNetworking.createHttpDataSourceFactory(sanitizedHeaders, useLongReadTimeout = true)
-        } else if (usesAutoSpeedup(
-                enabled = autoSpeedupEnabled,
-                customNetwork = customNetworkEnabled,
-                mediaServer = isMediaServerUrl(url),
-                adaptive = isHls || isDash,
-                slowStart = SlowStartServer.matches(url)
-            )
-        ) {
-            autoSpeedupFactory(context, url, LedgerDataSourceFactory(httpDataSourceFactory), sanitizedHeaders)
-        } else {
-            LedgerDataSourceFactory(httpDataSourceFactory)
         }
+        val rustReason = rustBackendReason(url, resolvedMimeType, isHls || isDash, sanitizedHeaders)
+        val networkProgressiveFactory: DataSource.Factory = if (rustReason == null) {
+            PlayerPlaybackNetworking.cancelSelectedPlaybackPrewarm(url, sanitizedHeaders)
+            ParallelRangeDataSource.handOffRetainedSession()
+            obtainRustFactory(url, sanitizedHeaders, DataSource.Factory { kotlinProgressiveFactory.createDataSource() }, mp4SessionMode)
+                .also { if (!vodCacheEnabled) it.prewarm() }
+        } else {
+            rustFactory?.close(); rustFactory = null
+            com.nuvio.tv.core.streaming.StreamingDiagnostics.kotlin(rustReason)
+            kotlinProgressiveFactory
+        }
+        rustBudgetConsumer(rustReservedBytes)
         if (networkProgressiveFactory !is AutoSpeedupDataSource.Factory) AutoSpeedup.end()
         when {
+            networkProgressiveFactory is com.nuvio.tv.core.streaming.RustHttpDataSource.Factory -> PlaybackLanes.clear()
             useChunkSessionSource -> PlaybackLanes.useManual(
                 chunkSessionShape.effectiveConnections,
                 chunkSessionShape.effectiveChunkBytes
@@ -482,7 +514,7 @@ internal class PlayerMediaSourceFactory(
         // subtitle download path so they don't inherit the stream's headers and client.
         val transferSession = PlaybackByteCounter.beginSource(url, when {
             isHls || isDash -> PlaybackTransferCoverage.UNAVAILABLE
-            useChunkSessionSource -> PlaybackTransferCoverage.CHUNKED_PARTIAL
+            useChunkSessionSource || networkProgressiveFactory is com.nuvio.tv.core.streaming.RustHttpDataSource.Factory -> PlaybackTransferCoverage.CHUNKED_PARTIAL
             else -> PlaybackTransferCoverage.PROGRESSIVE
         })
         val countedMediaFactory = CountingDataSourceFactory(progressiveFactory, transferSession)
@@ -527,14 +559,88 @@ internal class PlayerMediaSourceFactory(
 
     /** Rebuilds of the same stream (a subtitle added, a retry) keep the clamp: it still describes this server. */
     private fun notePlaybackStart(url: String) {
-        if (playbackStart.isNew(url)) ParallelRangeDataSource.resetRateLimitMirrors()
+        if (playbackStart.isNew(url)) {
+            rustFallbackGate.sourceChanged(url)
+            ParallelRangeDataSource.resetRateLimitMirrors()
+        }
     }
 
     fun shutdown() {
+        rustFactory?.close()
+        rustFactory = null
+        rustBudgetConsumer(0)
         // Free any chunk buffers retained across seek reopens so native
         // allocations never outlive the player.
         AutoSpeedup.end()
         ParallelRangeDataSource.handOffRetainedSession()
+    }
+
+    private fun rustBudgetBytes(): Long {
+        val window = NuvioExoPlayerPerformanceHelper.currentDownloadWindow(nativeEngineEnabled, context)
+        // Reserve the sample queue first. Native transport never takes the whole player budget.
+        val target = if (bufferEngineEnabled || nativeEngineEnabled) window.reserveBufferMb else 100
+        // This amount is lent by the existing BufferMemoryKeeper, reducing its sample queue target.
+        val requested = com.nuvio.tv.core.streaming.StreamingBudgetBridge.networkBytes(target.toLong() * 1024 * 1024)
+        return rustBudgetAllowance(requested).coerceIn(0, requested)
+    }
+
+    private fun rustBackendReason(url: String, mime: String?, adaptive: Boolean, headers: Map<String, String>): String? {
+        if (!rustHttpEnabled) return "selected_kotlin"
+        if (headers.keys.any { it.lowercase() in setOf("range", "if-range", "host", "content-length") }) return "unsupported_headers"
+        if (rustFallbackGate.blocked(url, headers)) return "native_restart_at_saved_position"
+        if (adaptive || mime !in setOf(MimeTypes.VIDEO_MP4, MimeTypes.VIDEO_MATROSKA)) return "unsupported_media"
+        if (isLoopbackUrl(url) || isMediaServerUrl(url) || SlowStartServer.matches(url)) return "android_transport_policy"
+        if (rustBudgetBytes() < 256L * 1024) return "no_network_memory_budget"
+        if (!com.nuvio.tv.core.streaming.RustNetworkHooks.allowed(url)) return "android_auth_or_trust"
+        return com.nuvio.tv.core.streaming.RustStreamingBridge.availability
+    }
+
+    fun prepareRustRestart(error: Throwable): Boolean {
+        val factory = rustFactory ?: return false
+        val failure = generateSequence(error) { it.cause }.take(12)
+            .filterIsInstance<com.nuvio.tv.core.streaming.RustTerminalIOException>().firstOrNull() ?: return false
+        if (failure.sourceToken != factory.token) return false
+        val cause = failure.cause as? java.io.IOException ?: return false
+        if (!rustFallbackGate.take(factory.url, factory.headers, cause)) return false
+        return try {
+            factory.disable("native_restart_at_saved_position")
+            com.nuvio.tv.core.streaming.StreamingDiagnostics.kotlin("native_restart_at_saved_position")
+            true
+        } catch (_: java.io.IOException) { false }
+    }
+
+    private fun obtainRustFactory(url: String, headers: Map<String, String>, fallback: DataSource.Factory, mp4Single: Boolean): com.nuvio.tv.core.streaming.RustHttpDataSource.Factory {
+        HostSpeeds.attach(context.applicationContext.getSharedPreferences("auto_speedup_hosts", Context.MODE_PRIVATE))
+        val existing = rustFactory
+        if (existing != null && existing.matches(url, headers)) {
+            existing.fallbackFactory = fallback
+            return existing
+        }
+        existing?.close()
+        com.nuvio.tv.core.streaming.StreamingDiagnostics.metrics = LongArray(10)
+        lateinit var created: com.nuvio.tv.core.streaming.RustHttpDataSource.Factory
+        created = com.nuvio.tv.core.streaming.RustHttpDataSource.Factory(
+            url, headers, rustBudgetBytes(),
+            connections = when {
+                mp4Single -> 1
+                useParallelConnections -> parallelConnectionCount.coerceIn(1, 16)
+                autoSpeedupEnabled -> AutoSpeedup.limitsFor(NuvioExoPlayerPerformanceHelper.getDevicePhysicalRamBytes(context)).maxDownloads
+                else -> 1
+            },
+            piece = if (mp4Single) MP4_SESSION_CHUNK_BYTES else (parallelChunkSizeKb.toLong() * 1024).coerceIn(64L * 1024, 128L * 1024 * 1024),
+            adaptive = autoSpeedupEnabled && !useParallelConnections && !mp4Single,
+            fallbackFactory = fallback,
+            onDisabled = { if (rustFactory === created) rustBudgetConsumer(0) }
+        )
+        rustFactory = created
+        rustBudgetConsumer(created.budget)
+        return created
+    }
+
+    fun sampleRustPlayer(now: Long, ahead: Long, loading: Boolean, playing: Boolean, full: Boolean,
+        bitrate: Long, seek: Long, rebuffers: Int, memoryShort: Boolean, targetMs: Long) {
+        rustFactory?.sample(longArrayOf(now, ahead, if (loading) 1 else 0, if (playing) 1 else 0,
+            if (full) 1 else 0, bitrate.coerceAtLeast(0), seek.coerceAtLeast(0), rebuffers.toLong(), if (memoryShort) 1 else 0, targetMs.coerceAtLeast(0)))
     }
 
     private fun autoSpeedupFactory(
@@ -1522,7 +1628,13 @@ private class PlayerLoadErrorHandlingPolicy : DefaultLoadErrorHandlingPolicy(6) 
     }
 
     override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+        if (loadErrorInfo.exception.findCause<com.nuvio.tv.core.streaming.RustTerminalIOException>() != null) {
+            return C.TIME_UNSET
+        }
         val httpException = loadErrorInfo.exception.findCause<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>()
+        if (httpException?.responseCode == 416 && httpException.responseMessage == "Rust HTTP") {
+            return C.TIME_UNSET
+        }
         if (httpException != null) {
             val code = httpException.responseCode
             if (code == 400 || code == 401 || code == 403 || code == 404 || code == 410) {

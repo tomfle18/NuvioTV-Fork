@@ -123,6 +123,12 @@ if (withRustStreaming) {
         if (name.startsWith("merge") && name.endsWith("JniLibFolders")) dependsOn(buildRustStreaming)
     }
 }
+tasks.withType<Test>().configureEach {
+    providers.gradleProperty("rustHostJniDir").orNull?.let { directory ->
+        systemProperty("java.library.path", rootProject.file(directory).absolutePath)
+        systemProperty("nuvio.rust.jni", "true")
+    }
+}
 
 fun env(name: String): String? = providers.environmentVariable(name).orNull
 
