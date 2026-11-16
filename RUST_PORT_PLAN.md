@@ -4,7 +4,7 @@ Dokument wykonawczy dla GPT Sol. Stan analizy: 16 listopada 2026 r.
 
 Repozytorium: `tomfle18/NuvioTV-Fork`. Gałąź robocza: `rust_port`.
 Baza: `main`, commit `343b27591b65ca57372c2a7d420e767a8f86260c`.
-Status: plan po przeglądzie kodu, bez implementacji Rust i bez pomiarów na urządzeniu.
+Status aktualizacji: zaimplementowany eksperymentalny transport Rust, JNI i integracja aplikacji; Kotlin pozostaje domyślny. Testy i buildy hosta są opisane w `RUST_PORT_STATUS.md`. Odbiór sprzętowy i benchmarki z etapu 6 pozostają otwarte.
 
 ## 1. Cel i granice
 
@@ -88,7 +88,7 @@ Kotlin: wybór źródła, ustawienia, budżety aplikacji, stan odtwarzania
   -> istniejący extractor -> bufor próbek -> renderer / dekoder
 ```
 
-Nowe katalogi są propozycją, nie istniejącym kodem:
+Poniższy podział był propozycją analizy. Implementacja grupuje sesje, czytniki i scheduler w `engine.rs`, ownership w `store.rs`, a regulator w `control.rs`; `jni_bridge.rs` jest jedyną warstwą dotykającą pamięci JVM:
 
 ```text
 native/streaming-engine/
@@ -325,3 +325,19 @@ Proponowane początkowe bramki, do kalibracji po bazowych pomiarach:
 - [Android: zgodność bibliotek natywnych z 16 KiB](https://developer.android.com/guide/practices/page-sizes). Sam wybór NDK nie zastępuje sprawdzenia wynikowego ELF i APK, także bibliotek dostarczonych wcześniej.
 - [reqwest](https://docs.rs/reqwest/latest/reqwest/), [jni-rs](https://docs.rs/jni/latest/jni/), [cargo-ndk](https://github.com/bbqsrc/cargo-ndk). Konkretne wersje należy przypiąć i zweryfikować w etapie 1.
 - [libdovi: biblioteka Rust i C API](https://github.com/quietvoid/dovi_tool/tree/main/dolby_vision), [MPV: dokumentacja](https://mpv.io/manual/stable/).
+
+## 14. Decyzje implementacji V1 i otwarte bramki
+
+- Sesja ma jeden scheduler i regulator Rust. Nie uruchamia Kotlinowego `AutoSpeedup.begin` do czasu faktycznego fallbacku. Przeniesiono równania kosztu Range, progi refill, mierzone próby wzrostu i histerezę. Zamiast kopiowania przełączania między oddzielnymi single/multi DataSource stosowana jest jedna sesja z segmentami niezależnymi od rozmiaru żądania. Wektory polityki są testowane, ale pełna równoważność zachowania regulatorów na realnej sieci wymaga etapu 6.
+- Bloki mają do 64 KiB, a alokacje dopasowują się do odebranego fragmentu (minimum 4 KiB). Zapobiega to marnowaniu 64 KiB na każdy mały pakiet HTTP. Właścicielem jest `Arc<Block>`; eviction nie unieważnia kopii czytelnika. Aktywne bufory i wolna pula podlegają temu samemu limitowi.
+- Początkowy limit Rust to do 16 MiB wydzielonych z istniejącego budżetu odtwarzania, z zachowaniem minimalnego bufora próbek i rezerwy startu zależnej od bitrate. To limit kontrolowanych buforów, nie całego heap transportu ani PSS. TLS, sockety, metadata i pozostałe bufory aplikacji wymagają pomiaru na boxie.
+- Krótkie bounded odczyty ograniczają koniec Range do DataSpec. Prefetch uzyskuje czytnik po co najmniej 256 KiB ciągłego odczytu; sam odczyt tail nie uruchamia pobierania z wyprzedzeniem. Przy pełnym buforze producenci czekają, zamiast nadpisywać nieprzeczytane dane dla samej aktywności socketu.
+- Prewarm odtwarzania korzysta z tej samej sesji Rust i jest ograniczony do 64 KiB. Przy włączonym cache dyskowym nie uruchamia dodatkowego prewarm Rust. Wcześniejszy prewarm Kotlin jest anulowany przed przejęciem źródła.
+- Każdy rzeczywisty GET, retry i redirect uzyskuje atomowo slot `ConnectionLedger`. Skończone żądanie zwalnia slot przez RAII; anulowanie przed nagłówkami jest neutralne dla uczenia odmów. Przejściowy brak slotu nie zatruwa sesji jako błąd serwera.
+- Nie stosujemy globalnego deadline dla całego body: duży plik i backpressure mogłyby go przekroczyć podczas prawidłowego odtwarzania. Są osobne limity connect, headers, bezczynności body i oczekiwania czytelnika, maksymalnie trzy próby pobrania zakresu oraz anulowalne pauzy.
+- DNS korzysta z istniejącego resolvera Kotlin. Blokującego wywołania resolvera Androida nie można siłowo przerwać; czytelnik i żądania są anulowane niezależnie, a liczba blokujących workerów jest ograniczona do czterech. Wymaga to osobnego testu po zmianie sieci.
+- Rustls/WebPKI nie odtwarza całej polityki zaufania Androida. Media servers, niestandardowe zaufanie, aktywny cookie jar, proxy, loopback i specjalne nagłówki pozostają przy Kotlinie. Błąd początkowego połączenia pozwala na jeden fallback. Nie wyłączamy weryfikacji TLS.
+- Po dostarczeniu bajtów nie sklejamy odpowiedzi różnych backendów. Dopuszczony jest jeden kontrolowany restart przez istniejące recovery z zapisanej pozycji filmu. Bramka pozostaje aktywna przy odbudowie źródła, a token sesji izoluje spóźnione błędy starego filmu. Autoryzacja, zmiana zasobu i błędny protokół wracają do obsługi błędów aplikacji.
+- `libass` w zastanym AAR jest statycznie dołączony do `libasskt.so`. Weryfikator sprawdza zdefiniowane symbole renderera, zamiast wymagać nieobecnego także w bazie `libass.so`. Nowa biblioteka Rust jest weryfikowana dla 16 KiB w ELF i ZIP. Zastany ARM64 `libconscrypt_jni.so` nie spełnia testu segmentów ELF 16 KiB, więc zgodność całego APK nie jest potwierdzona.
+
+Etapy 0-5 mają implementację i walidację hosta. Wyjścia wymagające odtwarzania MKV/MP4 na Androidzie, macierzy kodeków, cache i miniaturek na urządzeniu nadal wymagają odbioru. Etap 6 nie został zaliczony: brak urządzenia, wybranych materiałów oraz pomiarów Kotlin/Rust. ARM32 jest głównym APK dla boxa użytkownika; ARM64 pozostaje zachowane.
