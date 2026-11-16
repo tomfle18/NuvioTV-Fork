@@ -2,6 +2,7 @@ package com.nuvio.tv.core.streaming;
 import java.nio.ByteBuffer;
 final class RustStreamingBridge {
     static native int version();
+    static native long[] resources();
     static native long create(String url,String[] headers,long budget,int connections,long piece,int prefetch,int adaptive,RustNetworkHooks hooks);
     static native long open(long session,long position,long length);
     static native long awaitOpen(long reader) throws java.io.IOException;

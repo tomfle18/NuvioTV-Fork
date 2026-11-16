@@ -15,7 +15,7 @@ public final class JniContractTest {
         try {action.run();throw new AssertionError("accepted invalid operation");}catch(IOException expected){}
     }
     public static void main(String[] args) throws Exception {
-        System.load(args[0]);check(RustStreamingBridge.version()==1,"version");
+        System.load(args[0]);check(RustStreamingBridge.version()==3,"version");
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         var workers=Executors.newFixedThreadPool(4);server.setExecutor(workers);
         server.createContext("/",exchange->{
@@ -80,8 +80,19 @@ public final class JniContractTest {
         check((System.nanoTime()-before)/1000000<500,"cancel and drain deadline");
         check(hooks.live.isEmpty(),"cancelled request slot leaked");
         rejects(()->RustStreamingBridge.open(slow,0,-1));
+        for(int cycle=0;cycle<200;cycle++){
+            long raced=RustStreamingBridge.create(url,new String[0],budget,1,65536,0,0,hooks);
+            var start=new java.util.concurrent.CountDownLatch(1);
+            var opened=new AtomicReference<Long>(0L);
+            var opener=new Thread(()->{try{start.await();opened.set(RustStreamingBridge.open(raced,0,0));}catch(Exception expected){} });
+            opener.start();start.countDown();RustStreamingBridge.releaseSession(raced);opener.join();
+            check(RustStreamingBridge.resources()[1]==0,"reader published after final session release");
+            RustStreamingBridge.closeReader(opened.get());
+        }
+        long[] resources=RustStreamingBridge.resources();
+        check(resources[0]==0&&resources[1]==0&&resources[2]==0,"sessions/readers/buffer pool not released");
         server.stop(0);workers.shutdownNow();
-        System.out.println("JNI contract: PASS (1000 seek/reopen cycles, byte[]/direct, bounds, handles, cancel, budgets, slots)");
+        System.out.println("JNI contract: PASS (1000 seek/reopen + 200 open/release races, byte[]/direct, bounds, handles, cancel, budgets, slots, zero retained resources)");
         }finally{server.stop(0);workers.shutdownNow();}
     }
 }

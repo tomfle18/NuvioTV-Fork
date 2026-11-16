@@ -15,6 +15,9 @@ final class RustNetworkHooks {
         if(live.remove(id)==null)throw new AssertionError("double release");
     }
     public boolean allowed(String url) {return true;}
+    public int capacity(String url,int wanted){return wanted;}
+    public long[] history(String url){return new long[0];}
+    public void limit(String url,int count,boolean blocked){}
     public String[] resolve(String host) throws Exception {
         InetAddress[] all=InetAddress.getAllByName(host);String[] out=new String[all.length];
         for(int i=0;i<all.length;i++)out[i]=all[i].getHostAddress();return out;
