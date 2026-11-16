@@ -8,6 +8,20 @@ Port jest eksperymentalny. Kotlin pozostaje domyślny. Etapy 0-5 mają kod
 i testy hosta; odbiór sprzętowy i etap 6 pozostają otwarte. Nie ma pomiaru
 dowodzącego poprawy CPU, RAM, startu ani seek.
 
+## Izolowana aplikacja testowa
+
+Od `7d71e95bd` pakiet instalacyjny to `com.nuvio.tv.rusttest`, a nazwa w launcherze
+to **Nuvio Rust Test**. Można go instalować obok bazowego `com.nuvio.tv.test`.
+Namespace klas i JNI pozostaje `com.nuvio.tv`; oba identyfikatory providerów
+korzystają z nowego applicationId. Aplikacja ma oddzielne dane i ustawienia.
+
+Aktualizacje aplikacji są wyłączone: obie flagi BuildConfig są false, ustawienia
+updatera są ukryte, ViewModel nie uruchamia sprawdzania/pobierania, a harmonogram
+anuluje wszystkie trzy rodzaje zadań. Trzy komponenty updatera są disabled
+w manifeście, brak uprawnień instalowania APK, a instalator ma dodatkową blokadę.
+Ręczne instalowanie kolejnych testowych APK z poziomu Androida pozostaje możliwe.
+Zmiana dotyczy nowego pakietu; nie zmienia ustawień aplikacji bazowej.
+
 ## Repozytorium i zachowany zakres
 
 - Praca: `D:\projekty_codex\nuviotv`, istniejąca gałąź `rust_port`.
@@ -95,16 +109,17 @@ fallback, aby zachować własność magazynu cookies w Androidzie.
 | JVM/JNI host Java | 1000 seek/reopen, 200 open/release races, byte[]/direct, bounds, handles, cancel, budżet, sloty; zero pozostawionych sesji/czytników/buforów |
 | Weryfikator APK | 5 testów skryptu przeszło |
 | Regresje JVM aplikacji | 435 testów w 39 zestawach, zero błędów i pominięć, w tym 2 testy adaptera z prawdziwym JNI hosta |
-| APK debug i release/R8 | 4 APK z local.properties, oba ABI; ELF/ZIP/JNI przeszły, Rust identyczny w debug/release; R8 zachował nazwy mostu i callbacks |
+| APK debug i release/R8 | Pierwszy port 7c54b7b47: 4 APK i oba ABI. Rust Test 7d71e95bd: 2 APK release/R8, oba ABI; ELF/ZIP/JNI i podpis ARMv7 przeszły, biblioteka Rust ma niezmieniony hash |
+| Izolowana dystrybucja Rust Test | 59 testów release updatera/streaming przeszło, bez pominięć; 3 nowe testy blokady i 2 testy prawdziwego JNI |
 | JNI na Androidzie | Nie wykonano: brak podłączonego urządzenia |
 | Android TV, kodeki i HDMI | Nie wykonano; użytkownik potwierdził ręczną weryfikację na własnym boxie ARM32 |
 | Kotlin/Rust A/B | Nie wykonano; nie deklarujemy poprawy wydajności |
 
 Zdalny [przebieg CI dla końcowego kodu 7c54b7b47](https://github.com/tomfle18/NuvioTV-Fork/actions/runs/43949788562):
 `core-jni` i `miri-core` przeszły. Job `android` w chwili zapisu raportu
-nadal wykonuje testy JVM oraz budowanie debug/release. Lokalnie te testy,
-oba ABI, R8 i kontrola wynikowych APK przeszły. Trwający przebieg nie jest
-raportowany jako zakończony sukcesem.
+również zakończył się sukcesem: testy JVM, debug/release obu ABI, kontrola APK
+i upload testowych artefaktów. [CI izolowanej dystrybucji 7d71e95bd](https://github.com/tomfle18/NuvioTV-Fork/actions/runs/43955065659)
+ma zaliczone core-jni i Miri; jego job Android w chwili zapisu raportu nadal trwa.
 
 Transport testuje >4 GiB, losowe odczyty, dwa kursory, 200/206/416,
 błędny/duplikowany Range, encoding, urwany body, nieznaną długość, chunked,
@@ -121,16 +136,19 @@ przeszedł `cargo +nightly-2026-11-15 check --manifest-path native/streaming-eng
 Główny APK dla boxa użytkownika: `armeabi-v7a`.
 
 ```
+app/build/outputs/apk/full/release/Nuvio-Rust-Test-7d71e95bd-armeabi-v7a.apk
 app/build/outputs/apk/full/release/app-full-armeabi-v7a-release.apk
-app/build/outputs/apk/full/debug/app-full-armeabi-v7a-debug.apk
 app/build/outputs/apk/full/release/app-full-arm64-v8a-release.apk
-app/build/outputs/apk/full/debug/app-full-arm64-v8a-debug.apk
 ```
 
-Końcowy release ARM32: 115 753 137 bajtów, SHA-256
-`8475c1ff47c25f0c7161ca075cab76d092eadd3903b47a08d0a0c1a4c14a0c0d`.
-ARM64: 126 512 195 bajtów, SHA-256
-`a0fd19c69f78f5b865e6a2fa04382f363bfcbf0a3c3b53b523a4a86e1986af01`.
+Nazwany plik jest identyczną kopią ARMv7 z nowym ID i wyłączonym updaterem.
+Końcowy release Rust Test ARM32: 115 738 841 bajtów, SHA-256
+`d73949fe3e985d74094de02172d5a460dd673aab4a2fe2b09e48b6932dab7a9f`.
+ARM64: 126 497 899 bajtów, SHA-256
+`fa6bfe764ed114e34f6ce69cf97dddaee90f0f08c20367dcfefa877f4f6c27bd`.
+`aapt2` odczytał z wynikowego APK pakiet, nazwę (także po polsku), disabled
+wszystkich trzech komponentów updatera i brak obu uprawnień instalowania APK.
+`apksigner` potwierdził poprawny podpis v2 ARMv7.
 Aktualizacja istniejącej instalacji wymaga zgodnego podpisu; testowy podpis
 debug może różnić się od podpisu zainstalowanego APK. Nie usuwać danych
 aplikacji jako rutynowej części testu portu.
@@ -214,4 +232,6 @@ backendu domyślnego ani deklarować przewagi wydajnościowej.
 - `b6fb005e7`: korekta konfiguracji SDK/nightly i przypięty runner CI.
 - `7c54b7b47`: przekazanie nowych kontekstów cookies do Androida, testy odpowiedzi i redirect.
 
-APK wskazuje commit kodu `7c54b7b47`; późniejszy commit raportu nie zmienia binariów.
+- `7d71e95bd`: oddzielny pakiet Rust Test, nazwa launchera i pełne wyłączenie updatera.
+
+Aktualny APK wskazuje `7d71e95bd`; późniejszy commit raportu nie zmienia binariów.
