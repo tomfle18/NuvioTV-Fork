@@ -37,9 +37,9 @@ class BufferMemoryKeeperTest {
         true, false, C.TIME_UNSET, C.TIME_UNSET
     )
 
-    private fun customControl(budgetMb: Long = 100) = BitrateAwareLoadControl(
+    private fun customControl(budgetMb: Long = 100, maxBufferMs: Int = 45_000) = BitrateAwareLoadControl(
         minBufferMs = 15_000,
-        maxBufferMs = 45_000,
+        maxBufferMs = maxBufferMs,
         bufferForPlaybackMs = 5_000,
         bufferForPlaybackAfterRebufferMs = 3_000,
         prioritizeTimeOverSizeThresholds = true,
@@ -76,8 +76,6 @@ class BufferMemoryKeeperTest {
 
     private var lastWarnings = 0
 
-    private val criticalTold = mutableListOf<Boolean>()
-
     private fun keeper(
         control: BufferBudgetControl,
         budgetManaged: Boolean = true,
@@ -87,14 +85,12 @@ class BufferMemoryKeeperTest {
     ) = BufferMemoryKeeper(
         control, { free }, { now }, worker, budgetManaged, ceilingMb * mb,
         swapFreeMb = { swapFree },
-        addressSpaceUsedMb = { addressSpaceMb },
+
         floorBytes = floorMb * mb,
         oneGbBox = oneGbBox,
         onLastWarning = { lastWarnings++ },
-        onCritical = { criticalTold += it },
-    )
 
-    private var addressSpaceMb: Long? = null
+    )
 
     private fun take(megabytes: Long): List<Allocation> =
         List((megabytes * mb / segment).toInt()) { allocator.allocate() }
@@ -110,48 +106,33 @@ class BufferMemoryKeeperTest {
     }
 
     @Test
-    fun `a 32-bit box with address space to spare keeps its whole budget`() {
-        addressSpaceMb = 2_500L
-        val k = keeper(customControl(budgetMb = 300))
-        k.attach()
-        assertEquals(-1L, k.roomCapBytes)
-        assertEquals(-1L, k.effectiveCapBytes())
-        k.detach()
-    }
-
-    @Test
-    fun `near the 32-bit ceiling the buffer keeps what it holds plus the room left`() {
-        addressSpaceMb = 3_260L
-        val lc = customControl(budgetMb = 300)
-        take(60)
-        val k = keeper(lc)
-        k.tendAddressSpace()
-        assertEquals(100 * mb, k.roomCapBytes)
-        assertEquals(100 * mb, k.effectiveCapBytes())
-    }
-
-    @Test
-    fun `past the 32-bit ceiling the buffer drops to its floor and gets room back later`() {
-        addressSpaceMb = 3_500L
-        val lc = customControl(budgetMb = 300)
-        take(60)
-        val k = keeper(lc)
-        k.tendAddressSpace()
-        assertEquals(BufferSizing.MIN_SIZED_BUFFER_MB * mb, k.roomCapBytes)
-        addressSpaceMb = 2_000L
-        k.tendAddressSpace()
-        assertEquals(-1L, k.roomCapBytes)
-        assertEquals(-1L, k.effectiveCapBytes())
-    }
-
-    @Test
-    fun `a 64-bit box is never capped by address space`() {
-        addressSpaceMb = null
-        val lc = customControl(budgetMb = 300)
-        take(60)
-        val k = keeper(lc)
-        k.tendAddressSpace()
-        assertEquals(-1L, k.roomCapBytes)
+    fun `manual 800 to 1200 MB targets keep refilling after repeated seeks`() {
+        for (budgetMb in listOf(800L, 1000L, 1200L)) {
+            val lc = customControl(budgetMb = budgetMb, maxBufferMs = 600_000)
+            val k = keeper(lc, budgetManaged = false)
+            var held = take(80)
+            k.attach()
+            try {
+                assertEquals((budgetMb * mb).toInt(), lc.allocatorTargetBytes())
+                repeat(3) {
+                    giveBack(held)
+                    held = take(64)
+                    k.onSeek()
+                    now += BufferMemoryKeeper.SEEK_SETTLE_MS
+                    delayed.removeAt(0)()
+                    k.check(playing = true)
+                    assertEquals((budgetMb * mb).toInt(), lc.allocatorTargetBytes())
+                    assertEquals(-1L, k.effectiveCapBytes())
+                    assertTrue(lc.shouldContinueLoading(params(bufferedMs = 10_000)))
+                    assertTrue(lc.shouldContinueLoading(params(bufferedMs = 120_000)))
+                    assertFalse(lc.shouldContinueLoading(params(bufferedMs = 600_000)))
+                }
+            } finally {
+                giveBack(held)
+                k.detach()
+                lc.onReleased(playerId)
+            }
+        }
     }
 
     @Test
@@ -343,34 +324,6 @@ class BufferMemoryKeeperTest {
         assertEquals(BufferMemoryKeeper.LEVEL_NONE, k.pressureLevel)
         take(110)
         assertTrue(lc.shouldContinueLoading(params(bufferedMs = 6_000)))
-    }
-
-    @Test
-    fun `only a critical level limits the downloads, and easing or leaving lifts it`() {
-        val k = keeper(customControl(budgetMb = 100))
-        warn(k, ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)
-        assertEquals(emptyList<Boolean>(), criticalTold)
-        warn(k, ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
-        warn(k, ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
-        assertEquals(listOf(true), criticalTold)
-        now += BufferMemoryKeeper.RESTORE_QUIET_MS
-        k.check()
-        assertEquals(BufferMemoryKeeper.LEVEL_LOW, k.pressureLevel)
-        assertEquals(listOf(true, false), criticalTold)
-
-        val again = keeper(customControl(budgetMb = 100))
-        warn(again, ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
-        again.detach()
-        assertEquals(listOf(true, false, true, false), criticalTold)
-    }
-
-    @Test
-    fun `a box with room ignores a critical warning and never limits the downloads`() {
-        val k = keeper(customControl(budgetMb = 100))
-        k.onTrimMemory(ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
-        assertEquals(BufferMemoryKeeper.LEVEL_NONE, k.pressureLevel)
-        k.detach()
-        assertEquals(emptyList<Boolean>(), criticalTold)
     }
 
     @Test

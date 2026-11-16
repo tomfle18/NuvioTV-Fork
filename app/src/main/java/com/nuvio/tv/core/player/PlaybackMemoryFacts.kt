@@ -35,7 +35,6 @@ object PlaybackMemoryFacts {
         val pressureForS: Long,
         val grownMb: Long,
         val lentMb: Long,
-        val roomCapMb: Long = -1L,
     )
 
     private val state = AtomicReference<Player?>(null)
@@ -98,7 +97,6 @@ object PlaybackMemoryFacts {
                 pressureForS = if (changedAt > 0L) (SystemClock.elapsedRealtime() - changedAt) / 1000L else -1L,
                 grownMb = (keeper?.grownBytes ?: 0L) / MB,
                 lentMb = (keeper?.lentBytes ?: 0L) / MB,
-                roomCapMb = (keeper?.roomCapBytes ?: -1L).let { if (it < 0L) -1L else it / MB },
             )
         }.getOrNull()
         return format(player, buffer)
@@ -118,7 +116,6 @@ object PlaybackMemoryFacts {
                 if (b.targetMb >= 0L && b.targetMb != b.budgetMb) add("target ${b.targetMb} MB")
                 add("held ${b.heldMb} of ${b.footprintMb} MB")
                 if (b.lentMb > 0L) add("lent ${b.lentMb} MB")
-                if (b.roomCapMb >= 0L) add("address space cap ${b.roomCapMb} MB")
                 if (b.pressure >= 0) add("pressure ${pressureName(b.pressure)}" +
                     if (b.pressureForS >= 0L) " for ${b.pressureForS} s" else "")
             }.joinToString(", ")

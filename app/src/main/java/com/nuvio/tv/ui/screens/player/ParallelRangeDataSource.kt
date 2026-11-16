@@ -230,28 +230,6 @@ internal class ParallelRangeDataSource(
         /** Playback download threads: room for the most downloads a stream may run (16) on a 32-bit process. */
         internal fun playbackWorkerCount(is64Bit: Boolean): Int = if (is64Bit) 24 else 16
 
-        /** Downloads at once, the reader's piece included, while Android says memory is critical. */
-        internal const val CRITICAL_MEMORY_DEPTH = 2
-
-        @Volatile private var memoryCritical = false
-
-        internal val memoryCapped: Boolean get() = memoryCritical
-
-        /**
-         * Memory critical: playback runs at most [CRITICAL_MEMORY_DEPTH] downloads, and the pieces past the reader's
-         * next one are dropped with the idle buffers. False lifts the limit.
-         */
-        internal fun onMemoryCritical(critical: Boolean) {
-            if (critical == memoryCritical) return
-            memoryCritical = critical
-            if (!critical) {
-                Log.i(TAG, "MEMORY: critical pressure over, downloads back to their usual number")
-                return
-            }
-            val dropped = playbackResources.trimForPressure(keepAhead = CRITICAL_MEMORY_DEPTH - 1)
-            Log.w(TAG, "MEMORY: critical pressure, downloads limited to $CRITICAL_MEMORY_DEPTH, dropped $dropped pieces")
-        }
-
         // Most downloads an isolated test session runs at once.
         internal const val MAX_DIAGNOSTIC_DOWNLOADS = 32
 
@@ -884,29 +862,6 @@ internal class ParallelRangeDataSource(
                 session.chunkSize
             }
             drainIdleBuffers(chunkSz)
-        }
-
-        /**
-         * Drops the live session's pieces outside reader..reader+[keepAhead], keeping any piece read in the last
-         * [EVICTION_TOUCH_GUARD_MS], and frees every idle buffer. Returns the number of pieces dropped.
-         */
-        internal fun trimForPressure(keepAhead: Int): Int {
-            val dropped = synchronized(sessionLock) {
-                val session = currentChunkSession ?: return@synchronized 0
-                val reader = session.lastReadChunkIndex
-                if (reader < 0L) return@synchronized 0
-                val now = SystemClock.uptimeMillis()
-                synchronized(session) {
-                    val victims = session.futures.keys.filter {
-                        (it < reader || it > reader + keepAhead) &&
-                            !(it < reader && now - (session.lastTouch[it] ?: 0L) < EVICTION_TOUCH_GUARD_MS)
-                    }
-                    victims.forEach { evictFuture(session, it, poolCap = 0) }
-                    victims.size
-                }
-            }
-            clearGlobalPool()
-            return dropped
         }
 
         internal fun releaseRetainedSession() {
@@ -2056,7 +2011,7 @@ internal class ParallelRangeDataSource(
         // recovers +1 per quiet probe interval (Resources.ChunkSession.currentAllowedDepth),
         // so a provider that 429s converges just under its actual request
         // budget instead of latching to a single connection.
-        val maxAhead = (session?.currentAllowedDepth(minOf(effectivePrefetchDepth, speedupDepthLimit()))
+        val maxAhead = (session?.currentAllowedDepth(minOf(effectivePrefetchDepth, liveDepthLimit()))
             ?.coerceAtMost(earnedAhead)
             ?: earnedAhead).coerceAtMost(liveDepthLimit())
 
@@ -2096,12 +2051,7 @@ internal class ParallelRangeDataSource(
         resources.drainIdleBuffers(activeSession.chunkSize)
     }
 
-    private fun speedupDepthLimit(): Int = depthLimit?.invoke()?.coerceAtLeast(1) ?: Int.MAX_VALUE
-
-    private fun liveDepthLimit(): Int {
-        val speedup = speedupDepthLimit()
-        return if (memoryCritical && !isolateSession) minOf(speedup, CRITICAL_MEMORY_DEPTH) else speedup
-    }
+    private fun liveDepthLimit(): Int = depthLimit?.invoke()?.coerceAtLeast(1) ?: Int.MAX_VALUE
 
     private fun executeOrFail(future: CompletableFuture<DownloadedChunk>, task: () -> Unit) {
         try {
@@ -2117,8 +2067,8 @@ internal class ParallelRangeDataSource(
     private fun ensureChunkScheduled(chunkIndex: Long) {
         val activeSession = session ?: return
         // Make room under the memory-tiered cap before growing the map.
-        val live = liveDepthLimit()
-        val cap = if (live == Int.MAX_VALUE) activeSession.chunkCap else minOf(activeSession.chunkCap, live + 1)
+        val cap = if (depthLimit == null) activeSession.chunkCap
+            else minOf(activeSession.chunkCap, liveDepthLimit() + 1)
         resources.enforceSessionCap(activeSession, protectIndex = chunkIndex, poolCap = maxPoolSize, cap = cap)
         activeSession.futures.computeIfAbsent(chunkIndex) {
             val future = CompletableFuture<DownloadedChunk>()

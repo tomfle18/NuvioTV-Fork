@@ -22,7 +22,7 @@ import okio.ForwardingSource
 import okio.buffer
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -70,7 +70,7 @@ class ParallelRangeTeardownPressureTest {
 
     @After
     fun tearDown() {
-        ParallelRangeDataSource.onMemoryCritical(false)
+
         opened.forEach { runCatching { it.close() } }
         call(owned, "releaseRetainedSession")
         call(owned, "clearGlobalPool")
@@ -199,42 +199,6 @@ class ParallelRangeTeardownPressureTest {
         val late = OkHttpClient().newCall(Request.Builder().url(server.url("/file")).build())
         call(live, "adoptCall", late)
         assertTrue(late.isCanceled())
-    }
-
-    @Test
-    fun `critical memory limits downloads to the reader's piece and the next, and easing lifts it`() {
-        val source = source()
-        ParallelRangeDataSource.onMemoryCritical(true)
-        assertTrue(ParallelRangeDataSource.memoryCapped)
-        source.open(spec(0))
-        var position = readTo(source, 0, 20 * CHUNK)
-        val leads = requested.filter { it[0] > 0 }.map { it[0] - it[1] }
-        assertTrue("pieces requested ahead: $leads", leads.isNotEmpty() && leads.all { it <= 1 })
-
-        ParallelRangeDataSource.onMemoryCritical(false)
-        assertFalse(ParallelRangeDataSource.memoryCapped)
-        requested.clear()
-        position = readTo(source, position, 30 * CHUNK)
-        val after = requested.filter { it[0] > 0 }.map { it[0] - it[1] }
-        assertTrue("pieces requested ahead after easing: $after", after.any { it >= 2 })
-        readTo(source, position, file.size)
-    }
-
-    @Test
-    fun `a pressure trim keeps the piece being read and the next, and the film still reads through`() {
-        val source = source()
-        source.open(spec(0))
-        var position = readTo(source, 0, 8 * CHUNK + CHUNK / 2)
-        val live = session(source)
-        awaitTrue("pieces ahead are held") { futures(live).keys.any { it >= 10 } }
-
-        val reader = (field(live, "lastReadChunkIndex") as Long)
-        call(owned, "trimForPressure", 1)
-
-        val held = futures(live).keys
-        assertTrue("held $held reader $reader", reader in held && held.none { it > reader + 1 })
-        position = readTo(source, position, file.size)
-        assertEquals(file.size, position)
     }
 
     private companion object {
