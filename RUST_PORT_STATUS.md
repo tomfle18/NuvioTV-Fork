@@ -8,6 +8,15 @@ Port jest eksperymentalny. Kotlin pozostaje domyślny. Etapy 0-5 mają kod
 i testy hosta; odbiór sprzętowy i etap 6 pozostają otwarte. Nie ma pomiaru
 dowodzącego poprawy CPU, RAM, startu ani seek.
 
+## Cofnięcie ograniczeń z Arc 1.2.0
+
+`7a724f399` usuwa nowy limit bufora oparty na VmSize=3300 MB i ograniczanie
+prefetch do dwóch fragmentów przy presji pamięci, przywracając tę politykę
+do stanu z 1.1.0-arc.4. Użytkownik zgłosił regresję przy ręcznych 800-1200 MB
+na Homatics R 4K Plus. [Opis zakresu i testów](BUFFER-ROLLBACK-20261116.md).
+670 testów release przeszło, w tym scenariusz trzech seeków dla każdego
+z celów 800/1000/1200 MB. Test nie jest pomiarem napełnienia na urządzeniu.
+
 ## Izolowana aplikacja testowa
 
 Od `7d71e95bd` pakiet instalacyjny to `com.nuvio.tv.rusttest`, a nazwa w launcherze
@@ -119,6 +128,7 @@ Zdalny [przebieg CI dla końcowego kodu 7c54b7b47](https://github.com/tomfle18/N
 `core-jni` i `miri-core` przeszły. Job `android` w chwili zapisu raportu
 również zakończył się sukcesem: testy JVM, debug/release obu ABI, kontrola APK
 i upload testowych artefaktów. [CI izolowanej dystrybucji 7d71e95bd](https://github.com/tomfle18/NuvioTV-Fork/actions/runs/43955065659)
+również zakończyło wszystkie joby sukcesem. [CI cofnięcia ograniczeń 7a724f399](https://github.com/tomfle18/NuvioTV-Fork/actions/runs/43961164880)
 ma zaliczone core-jni i Miri; jego job Android w chwili zapisu raportu nadal trwa.
 
 Transport testuje >4 GiB, losowe odczyty, dwa kursory, 200/206/416,
@@ -136,16 +146,18 @@ przeszedł `cargo +nightly-2026-11-15 check --manifest-path native/streaming-eng
 Główny APK dla boxa użytkownika: `armeabi-v7a`.
 
 ```
-app/build/outputs/apk/full/release/Nuvio-Rust-Test-7d71e95bd-armeabi-v7a.apk
+artifacts/Nuvio-Rust-Test-7a724f399-armeabi-v7a.apk
 app/build/outputs/apk/full/release/app-full-armeabi-v7a-release.apk
 app/build/outputs/apk/full/release/app-full-arm64-v8a-release.apk
 ```
 
-Nazwany plik jest identyczną kopią ARMv7 z nowym ID i wyłączonym updaterem.
-Końcowy release Rust Test ARM32: 115 738 841 bajtów, SHA-256
-`d73949fe3e985d74094de02172d5a460dd673aab4a2fe2b09e48b6932dab7a9f`.
-ARM64: 126 497 899 bajtów, SHA-256
-`fa6bfe764ed114e34f6ce69cf97dddaee90f0f08c20367dcfefa877f4f6c27bd`.
+Nazwany plik jest identyczną kopią ARMv7 z cofniętym ograniczeniem bufora,
+osobnym ID i wyłączonym updaterem. Katalog artifacts jest ignorowany przez Git
+i nie jest czyszczony przez kolejne zadania pakowania Gradle.
+Końcowy release Rust Test ARM32: 115 738 973 bajtów, SHA-256
+`7ec5dde134037a9ea06790b137ab819c6f5309e092c2423e6fb6db5ab8fd17de`.
+ARM64: 126 498 031 bajtów, SHA-256
+`95ab888619a127ea5672c699fa593a9ee5c2afe8bd1a45a4823b16ba9f7c2944`.
 `aapt2` odczytał z wynikowego APK pakiet, nazwę (także po polsku), disabled
 wszystkich trzech komponentów updatera i brak obu uprawnień instalowania APK.
 `apksigner` potwierdził poprawny podpis v2 ARMv7.
@@ -233,5 +245,6 @@ backendu domyślnego ani deklarować przewagi wydajnościowej.
 - `7c54b7b47`: przekazanie nowych kontekstów cookies do Androida, testy odpowiedzi i redirect.
 
 - `7d71e95bd`: oddzielny pakiet Rust Test, nazwa launchera i pełne wyłączenie updatera.
+- `7a724f399`: cofnięcie limitu VmSize i przycinania prefetch z 1.2.0; test dużych buforów po seek.
 
-Aktualny APK wskazuje `7d71e95bd`; późniejszy commit raportu nie zmienia binariów.
+Aktualny APK wskazuje `7a724f399`; późniejszy commit raportu nie zmienia binariów.

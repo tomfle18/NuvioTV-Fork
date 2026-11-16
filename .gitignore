@@ -65,6 +65,7 @@ docs/
 status-page/
 sentry.properties
 /.tools/
+/artifacts/
 /.gradle-local/
 /baseline-gradle.log
 /*.log

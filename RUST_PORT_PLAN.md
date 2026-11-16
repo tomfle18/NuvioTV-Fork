@@ -328,6 +328,11 @@ Proponowane początkowe bramki, do kalibracji po bazowych pomiarach:
 
 ## 14. Decyzje implementacji V1 i otwarte bramki
 
+Na prośbę użytkownika w `7a724f399` cofnięto limit budżetu ExoPlayera na podstawie
+VmSize i nowy krytyczny limit prefetch z Arc 1.2.0. Polityka tego bufora wróciła
+do 1.1.0-arc.4; nie zmienia to budżetu bloków Rust. Szczegóły i test 800-1200 MB
+po przewijaniu: `BUFFER-ROLLBACK-20261116.md`.
+
 - Sesja ma jeden scheduler i regulator Rust. Nie uruchamia Kotlinowego `AutoSpeedup.begin` do czasu faktycznego fallbacku. Przeniesiono równania kosztu Range, progi refill, mierzone próby wzrostu i histerezę. Zamiast kopiowania przełączania między oddzielnymi single/multi DataSource stosowana jest jedna sesja z segmentami niezależnymi od rozmiaru żądania. Wektory polityki są testowane, ale pełna równoważność zachowania regulatorów na realnej sieci wymaga etapu 6.
 - Bloki mają do 64 KiB, a alokacje dopasowują się do odebranego fragmentu (minimum 4 KiB). Zapobiega to marnowaniu 64 KiB na każdy mały pakiet HTTP. Właścicielem jest `Arc<Block>`; eviction nie unieważnia kopii czytelnika. Aktywne bufory i wolna pula podlegają temu samemu limitowi.
 - Początkowy limit Rust to do 16 MiB wydzielonych z istniejącego budżetu odtwarzania, z zachowaniem minimalnego bufora próbek i rezerwy startu zależnej od bitrate. To limit kontrolowanych buforów, nie całego heap transportu ani PSS. TLS, sockety, metadata i pozostałe bufory aplikacji wymagają pomiaru na boxie.
